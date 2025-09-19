@@ -1,0 +1,94 @@
+#!/bin/bash
+
+# 文件监听版本的 post-commit 钩子脚本
+# 生成JSON格式的事件文件供守护进程处理
+
+# 强制设置UTF-8环境
+export LC_ALL=en_US.utf8
+export LANG=en_US.utf8
+export LANGUAGE=en_US.utf8
+
+REPO_PATH="$1"
+REV="$2"
+
+# 获取仓库名称
+REPO_NAME=$(basename "$REPO_PATH")
+
+# 获取提交信息
+AUTHOR=$(svnlook author "$REPO_PATH" -r "$REV")
+MESSAGE=$(svnlook log "$REPO_PATH" -r "$REV")
+CHANGED_FILES=$(svnlook changed "$REPO_PATH" -r "$REV")
+
+# 生成唯一的文件名（时间戳+随机数）
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+RANDOM_ID=$(shuf -i 1000-9999 -n 1 2>/dev/null || echo $RANDOM)
+EVENT_FILE="/tmp/svn_hooks/hook_${TIMESTAMP}_${RANDOM_ID}.json"
+
+# 创建临时文件来传递数据，避免shell转义问题
+TEMP_DIR="/tmp/svn_hooks_temp"
+mkdir -p "$TEMP_DIR"
+TEMP_AUTHOR="$TEMP_DIR/author_$$"
+TEMP_MESSAGE="$TEMP_DIR/message_$$"
+TEMP_FILES="$TEMP_DIR/files_$$"
+
+# 将数据写入临时文件，保持原始编码
+echo "$AUTHOR" > "$TEMP_AUTHOR"
+echo "$MESSAGE" > "$TEMP_MESSAGE"
+echo "$CHANGED_FILES" > "$TEMP_FILES"
+
+# 创建JSON格式的事件数据，使用PHP来处理JSON编码
+php -r "
+// 设置内部编码为UTF-8
+mb_internal_encoding('UTF-8');
+
+\$repo_name = '$REPO_NAME';
+\$repo_path = '$REPO_PATH';
+\$revision = $REV;
+
+// 从临时文件读取数据，现在应该是UTF-8编码
+\$author = trim(file_get_contents('$TEMP_AUTHOR'));
+\$message = trim(file_get_contents('$TEMP_MESSAGE'));
+\$changed_files_raw = file_get_contents('$TEMP_FILES');
+
+// 处理changed_files
+\$changed_files = [];
+\$lines = explode(\"\n\", trim(\$changed_files_raw));
+foreach (\$lines as \$line) {
+    \$line = trim(\$line);
+    if (!empty(\$line)) {
+        // 移除前面的状态字符（A、U、D、M等）
+        \$file_path = strlen(\$line) > 4 ? trim(substr(\$line, 4)) : trim(\$line);
+        if (!empty(\$file_path)) {
+            \$changed_files[] = \$file_path;
+        }
+    }
+}
+
+// 构造数据
+\$data = [
+    'event_type' => 'commit',
+    'repo_name' => \$repo_name,
+    'repo_path' => \$repo_path,
+    'revision' => \$revision,
+    'author' => \$author,
+    'commit_message' => \$message,
+    'changed_files' => \$changed_files,
+    'timestamp' => '$(date -u +%Y-%m-%dT%H:%M:%SZ)',
+    'processed' => false
+];
+
+// 输出JSON
+echo json_encode(\$data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+" > "$EVENT_FILE"
+
+# 记录到日志
+echo "$(date): Hook triggered for revision $REV in $REPO_NAME, event file: $EVENT_FILE" >> /tmp/hook_test.log
+
+# 确保文件权限和所有者正确
+chmod 644 "$EVENT_FILE" 2>/dev/null
+chown apache:apache "$EVENT_FILE" 2>/dev/null
+
+# 清理临时文件
+rm -f "$TEMP_AUTHOR" "$TEMP_MESSAGE" "$TEMP_FILES" 2>/dev/null
+
+exit 0

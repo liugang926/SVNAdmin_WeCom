@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  svnadmin-wecom:
+    build:
+      context: ..
+      dockerfile: 03.cicd/svnadmin_docker/dockerfile
+      args:
+        - php_version=php74
+        - svn_version=1.14
+    container_name: svnadmin-wecom
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "3690:3690"
+    volumes:
+      # SVN 数据持久化
+      - svnadmin_data:/home/svnadmin
+      # 企业微信配置持久化
+      - wecom_config:/var/www/html/config
+      # 日志持久化
+      - wecom_logs:/var/www/html/logs
+    environment:
+      - TZ=Asia/Shanghai
+      # 企业微信配置环境变量（可选，优先级低于配置文件）
+      - WECOM_CORP_ID=${WECOM_CORP_ID:-}
+      - WECOM_CORP_SECRET=${WECOM_CORP_SECRET:-}
+      - WECOM_AGENT_ID=${WECOM_AGENT_ID:-}
+      - WECOM_SYNC_ENABLED=${WECOM_SYNC_ENABLED:-true}
+      - WECOM_NOTIFICATION_ENABLED=${WECOM_NOTIFICATION_ENABLED:-true}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/02.php/app/controller/WeComAdmin.php?action=GetSystemStatus"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - svnadmin-network
+
+  # 可选：Redis 缓存服务（用于提升企业微信 API 性能）
+  redis:
+    image: redis:7-alpine
+    container_name: svnadmin-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-svnadmin123}
+    networks:
+      - svnadmin-network
+
+  # 可选：MySQL 数据库服务（替代 SQLite）
+  mysql:
+    image: mysql:8.0
+    container_name: svnadmin-mysql
+    restart: unless-stopped
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ../02.php/templete/database/mysql:/docker-entrypoint-initdb.d
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-svnadmin123}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-svnadmin}
+      - MYSQL_USER=${MYSQL_USER:-svnadmin}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-svnadmin123}
+    networks:
+      - svnadmin-network
+
+volumes:
+  svnadmin_data:
+    driver: local
+  wecom_config:
+    driver: local
+  wecom_logs:
+    driver: local
+  redis_data:
+    driver: local
+  mysql_data:
+    driver: local
+
+networks:
+  svnadmin-network:
+    driver: bridge

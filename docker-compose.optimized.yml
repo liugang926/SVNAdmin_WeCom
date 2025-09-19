@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  svnadmin:
+    build:
+      context: .
+      dockerfile: Dockerfile.optimized
+    container_name: svnadmin-local-optimized
+    ports:
+      - "8080:80"
+      - "3690:3690"
+    volumes:
+      # SVN数据持久化
+      - ./data:/home/svnadmin
+      # 日志文件持久化
+      - ./logs:/var/www/html/logs
+      # Apache配置文件（可选）
+      - ./config/httpd.conf:/etc/httpd/conf.d/svnadmin.conf:ro
+      # SASL配置（可选）
+      - ./config/sasl2:/etc/sasl2:ro
+    environment:
+      - TZ=Asia/Shanghai
+      # 企业微信配置环境变量（可选）
+      - WECOM_CORP_ID=${WECOM_CORP_ID:-}
+      - WECOM_CORP_SECRET=${WECOM_CORP_SECRET:-}
+      - WECOM_AGENT_ID=${WECOM_AGENT_ID:-}
+    restart: unless-stopped
+    networks:
+      - svnadmin-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+networks:
+  svnadmin-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

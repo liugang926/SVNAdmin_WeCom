@@ -1,0 +1,278 @@
+# SVNAdmin 本地开发 Dockerfile - 优化版本
+# 使用已编译的前端文件，支持企业微信集成
+FROM registry.cn-hangzhou.aliyuncs.com/acs/centos:7
+
+LABEL MAINTAINER="SVNAdmin Local Build - Optimized with Pre-built Frontend"
+
+# 设置时区和环境变量（与原项目完全一致）
+ENV TZ=Asia/Shanghai \
+    DEBIAN_FRONTEND=noninteractive
+
+# 时区配置（与原项目完全一致）
+RUN ln -fs /usr/share/zoneinfo/${TZ} /etc/localtime && \
+    echo ${TZ} > /etc/timezone
+
+# 配置阿里云 CentOS 7 镜像源（解决网络问题）
+RUN sed -i 's|^mirrorlist=|#mirrorlist=|g' /etc/yum.repos.d/CentOS-*.repo && \
+    sed -i 's|^#baseurl=http://mirror.centos.org|baseurl=https://mirrors.aliyun.com|g' /etc/yum.repos.d/CentOS-*.repo && \
+    sed -i 's|^#baseurl=http://vault.centos.org|baseurl=https://mirrors.aliyun.com|g' /etc/yum.repos.d/CentOS-*.repo && \
+    yum clean all && yum makecache
+
+# 语言环境设置（修复中文支持 - 使用标准UTF-8 locale）
+RUN yum install -y glibc-common && \
+    localedef -c -i en_US -f UTF-8 en_US.UTF-8 && \
+    localedef -c -i zh_CN -f UTF-8 zh_CN.UTF-8 && \
+    echo 'LANG="en_US.UTF-8"' > /etc/locale.conf && \
+    echo 'LC_ALL="en_US.UTF-8"' >> /etc/locale.conf && \
+    echo 'export LANG="en_US.UTF-8"' >> /etc/profile && \
+    echo 'export LC_ALL="en_US.UTF-8"' >> /etc/profile
+
+# 安装基础软件包（分步骤，增加稳定性）
+RUN echo "Installing base packages..." && \
+    yum install -y epel-release yum-utils wget curl && \
+    # 配置EPEL阿里云镜像
+    sed -i 's|^metalink=|#metalink=|g' /etc/yum.repos.d/epel.repo && \
+    sed -i 's|^#baseurl=http://download.fedoraproject.org/pub|baseurl=https://mirrors.aliyun.com|g' /etc/yum.repos.d/epel.repo && \
+    yum clean all && yum makecache
+
+# 安装PHP（稳健的方式）
+RUN echo "Installing PHP..." && \
+    # 方法1：尝试安装Remi源
+    (curl -fsSL https://mirrors.aliyun.com/remi/enterprise/remi-release-7.rpm -o remi-release-7.rpm --connect-timeout 30 --max-time 300 && \
+     rpm -Uvh remi-release-7.rpm && \
+     yum-config-manager --enable remi-php72 && \
+     yum install -y php php-cli php-common php-json php-pdo php-mysqlnd php-gd php-mbstring php-xml php-curl php-process php-bcmath php-ldap php-openssl php-fpm) || \
+    # 方法2：如果Remi失败，使用EPEL的PHP
+    (echo "Remi installation failed, trying EPEL PHP..." && \
+     yum install -y php php-cli php-common php-json php-pdo php-mysqlnd php-gd php-mbstring php-xml php-curl php-process php-bcmath php-ldap php-openssl php-fpm) || \
+    # 方法3：最后备选，安装基础PHP
+    (echo "EPEL PHP failed, installing basic PHP..." && \
+     yum install -y php php-cli php-common php-mysql php-gd php-xml php-mbstring) && \
+    # 验证PHP安装
+    php --version && \
+    echo "PHP installation completed"
+
+# 安装Apache和其他基础软件包（先不安装SVN）
+RUN echo "Installing Apache and base packages..." && \
+    yum install -y \
+        httpd mod_ldap \
+        sqlite \
+        unzip which cronie at \
+        cyrus-sasl cyrus-sasl-lib cyrus-sasl-plain && \
+    yum clean all
+
+# 安装 Subversion 1.14.3（最新稳定版本）
+RUN echo "Installing Subversion 1.14.3 from WANdisco repository..." && \
+    # 添加 WANdisco SVN 1.14 仓库
+    cat > /etc/yum.repos.d/wandisco-svn.repo << 'EOF'
+[WANdisco-svn]
+name=WANdisco SVN Repo 1.14
+enabled=1
+baseurl=http://opensource.wandisco.com/centos/7/svn-1.14/RPMS/$basearch/
+gpgcheck=1
+gpgkey=http://opensource.wandisco.com/RPM-GPG-KEY-WANdisco
+EOF
+
+# 安装 SVN 1.14 和 Apache SVN 模块
+RUN yum install -y subversion subversion-tools mod_dav_svn && \
+    yum clean all && \
+    # 验证SVN版本
+    svn --version | head -2 && \
+    echo "SVN 1.14 installation completed" && \
+    # 创建 svn-tools 目录和兼容性链接
+    mkdir -p /usr/bin/svn-tools && \
+    # SVN 1.14 中 svnauthz-validate 功能已集成到 svnauthz
+    if [ -f /usr/bin/svnauthz ]; then \
+        ln -sf /usr/bin/svnauthz /usr/bin/svn-tools/svnauthz && \
+        ln -sf /usr/bin/svnauthz /usr/bin/svn-tools/svnauthz-validate && \
+        echo "Created compatibility links for svnauthz"; \
+    else \
+        echo "Warning: svnauthz not found in /usr/bin"; \
+    fi
+
+# 配置 Apache（保持原项目简洁配置 + 正确的中文支持）
+RUN sed -i 's/#ServerName www.example.com:80/ServerName localhost:80/' /etc/httpd/conf/httpd.conf && \
+    echo "DirectoryIndex index.php index.html" >> /etc/httpd/conf/httpd.conf && \
+    # 添加基本的 UTF-8 支持
+    echo "AddDefaultCharset UTF-8" >> /etc/httpd/conf/httpd.conf && \
+    # 添加中文URL路径支持（全局配置）
+    echo "" >> /etc/httpd/conf/httpd.conf && \
+    echo "# 中文URL路径支持" >> /etc/httpd/conf/httpd.conf && \
+    echo "AllowEncodedSlashes NoDecode" >> /etc/httpd/conf/httpd.conf && \
+    echo "AcceptPathInfo On" >> /etc/httpd/conf/httpd.conf && \
+    # 添加标准UTF-8环境变量支持（修复为en_US.UTF-8）
+    echo "" >> /etc/httpd/conf/httpd.conf && \
+    echo "# 标准UTF-8环境变量" >> /etc/httpd/conf/httpd.conf && \
+    echo "SetEnv LANG en_US.UTF-8" >> /etc/httpd/conf/httpd.conf && \
+    echo "SetEnv LC_ALL en_US.UTF-8" >> /etc/httpd/conf/httpd.conf && \
+    echo "SetEnv LC_CTYPE en_US.UTF-8" >> /etc/httpd/conf/httpd.conf
+
+# 不创建静态SVN配置，让SVNAdmin动态管理
+# 只确保SVN模块可用
+RUN echo "LoadModule dav_svn_module modules/mod_dav_svn.so" > /etc/httpd/conf.d/00-svn-modules.conf && \
+    echo "LoadModule authz_svn_module modules/mod_authz_svn.so" >> /etc/httpd/conf.d/00-svn-modules.conf
+
+# 配置 PHP（检查文件是否存在）
+RUN echo "Configuring PHP..." && \
+    # 查找PHP配置文件
+    PHP_INI_PATH=$(find /etc -name "php.ini" 2>/dev/null | head -1) && \
+    if [ -n "$PHP_INI_PATH" ]; then \
+        echo "Found PHP config at: $PHP_INI_PATH" && \
+        sed -i 's/expose_php = On/expose_php = Off/g' "$PHP_INI_PATH" && \
+        sed -i 's/;date.timezone =/date.timezone = Asia\/Shanghai/' "$PHP_INI_PATH" && \
+        sed -i 's/upload_max_filesize = 2M/upload_max_filesize = 100M/' "$PHP_INI_PATH" && \
+        sed -i 's/post_max_size = 8M/post_max_size = 100M/' "$PHP_INI_PATH" && \
+        sed -i 's/max_execution_time = 30/max_execution_time = 300/' "$PHP_INI_PATH" && \
+        echo "PHP configuration completed"; \
+    else \
+        echo "PHP config file not found, creating basic configuration..." && \
+        mkdir -p /etc && \
+        echo "[PHP]" > /etc/php.ini && \
+        echo "expose_php = Off" >> /etc/php.ini && \
+        echo "date.timezone = Asia/Shanghai" >> /etc/php.ini && \
+        echo "upload_max_filesize = 100M" >> /etc/php.ini && \
+        echo "post_max_size = 100M" >> /etc/php.ini && \
+        echo "max_execution_time = 300" >> /etc/php.ini && \
+        echo "Basic PHP configuration created"; \
+    fi
+
+# 创建标准目录结构（严格按照原项目 witersencom/svnadmin:2.5.10）
+RUN echo "Creating standard directory structure..." && \
+    # 项目相关目录
+    mkdir -p /var/www/html/logs && \
+    mkdir -p /var/www/html/templete/pid && \
+    # SVN数据目录（与原项目完全一致）
+    mkdir -p /home/svnadmin/backup && \
+    mkdir -p /home/svnadmin/crond && \
+    mkdir -p /home/svnadmin/rep && \
+    mkdir -p /home/svnadmin/temp && \
+    mkdir -p /home/svnadmin/templete/initStruct/01/branches && \
+    mkdir -p /home/svnadmin/templete/initStruct/01/tags && \
+    mkdir -p /home/svnadmin/templete/initStruct/01/trunk && \
+    mkdir -p /home/svnadmin/templete/pid && \
+    mkdir -p /home/svnadmin/logs && \
+    mkdir -p /home/svnadmin/hooks && \
+    mkdir -p /home/svnadmin/sasl/ldap && \
+    # 生产环境兼容目录（支持生产环境挂载）
+    mkdir -p /home/svnadmin/conf.d && \
+    mkdir -p /home/svnadmin/sasl2 && \
+    # 企业微信钩子目录（二次开发新增）
+    mkdir -p /home/svnadmin/templete/hooks/wecom_notify && \
+    # PHP-FPM运行目录
+    mkdir -p /run/php-fpm/ && \
+    # 确保SASL配置目录存在
+    mkdir -p /etc/sasl2 && \
+    # 创建必要的日志文件
+    touch /home/svnadmin/logs/svnserve.log && \
+    echo "Directory structure created successfully"
+
+# SVN工具链接已在SVN安装步骤中创建
+
+# 安装Node.js和npm（用于Vue前端构建）
+RUN echo "Installing Node.js and npm..." && \
+    curl -fsSL https://rpm.nodesource.com/setup_16.x | bash - && \
+    yum install -y nodejs && \
+    node --version && \
+    npm --version && \
+    echo "Node.js and npm installation completed"
+
+# 复制项目文件
+COPY data/ /home/svnadmin/
+COPY 02.php/ /var/www/html/
+COPY 04.update/ /var/www/html/04.update/
+
+# 在容器中构建Vue前端（推荐做法）
+COPY 01.web/package.json /tmp/svnadmin_web/
+RUN cd /tmp/svnadmin_web && \
+    rm -f package-lock.json && \
+    npm config set registry https://registry.npmmirror.com && \
+    npm config set progress false && \
+    npm config set audit false && \
+    npm install --no-audit --no-fund --legacy-peer-deps --unsafe-perm --timeout=300000
+
+COPY 01.web/ /tmp/svnadmin_web/
+RUN cd /tmp/svnadmin_web && \
+    echo "Pin webpack 2.x toolchain..." && \
+    npm rm -D webpack-cli || true && \
+    npm install -D --no-audit --no-fund --legacy-peer-deps --unsafe-perm --timeout=300000 \
+      webpack@2.7.0 webpack-dev-server@2.4.1 \
+      extract-text-webpack-plugin@2.0.0 html-webpack-plugin@2.28.0 \
+      babel-loader@6.4.1 webpack-merge@3.0.0 && \
+    echo "Building frontend in container..." && \
+    NODE_ENV=production npm run build && \
+    echo "Cleaning old frontend files from web directory..." && \
+    rm -f /var/www/html/*.js /var/www/html/*.css 2>/dev/null || true && \
+    echo "Copying built frontend files to web directory..." && \
+    cp dist/*.js dist/*.css dist/*.png dist/*.svg dist/*.woff* dist/*.ttf dist/index.html /var/www/html/ 2>/dev/null || true && \
+    echo "Frontend build completed successfully" && \
+    rm -rf /tmp/svnadmin_web
+
+# 创建完整的SVN工作目录结构并复制配置文件
+RUN echo "Creating SVN directory structure..." && \
+    mkdir -p /home/svnadmin/{rep,logs,hooks,backup,crond,temp,sasl/ldap} && \
+    mkdir -p /var/www/html/templete/{hooks/wecom_notify,initStruct/01/{trunk,branches,tags},pid} && \
+    echo "Creating SVN configuration files..." && \
+    echo '[general]' > /home/svnadmin/svnserve.conf && \
+    echo 'anon-access = none' >> /home/svnadmin/svnserve.conf && \
+    echo 'auth-access = write' >> /home/svnadmin/svnserve.conf && \
+    echo 'password-db = /home/svnadmin/passwd' >> /home/svnadmin/svnserve.conf && \
+    echo 'authz-db = /home/svnadmin/authz' >> /home/svnadmin/svnserve.conf && \
+    echo 'realm = SVNAdmin Repository' >> /home/svnadmin/svnserve.conf && \
+    echo "Creating properly formatted empty configuration files..." && \
+    echo '[users]' > /home/svnadmin/passwd && \
+    echo '# SVN users will be added here automatically' >> /home/svnadmin/passwd && \
+    echo '[aliases]' > /home/svnadmin/authz && \
+    echo '' >> /home/svnadmin/authz && \
+    echo '[groups]' >> /home/svnadmin/authz && \
+    echo '# SVN groups will be added here automatically' >> /home/svnadmin/authz && \
+    echo '' >> /home/svnadmin/authz && \
+    echo '[/]' >> /home/svnadmin/authz && \
+    echo '# Repository permissions will be added here automatically' >> /home/svnadmin/authz && \
+    touch /home/svnadmin/{httpPasswd,svnserve} && \
+    touch /home/svnadmin/logs/svnserve.log && \
+    touch /home/svnadmin/sasl/ldap/saslauthd.conf && \
+    ln -sf /var/www/html/templete /home/svnadmin/templete && \
+    echo "SVN directory structure created successfully"
+
+# 配置Apache PHP处理器
+RUN echo "Configuring Apache PHP handler..." && \
+    echo '# PHP Handler Configuration' > /etc/httpd/conf.d/php.conf && \
+    echo '<FilesMatch \.php$>' >> /etc/httpd/conf.d/php.conf && \
+    echo '    SetHandler application/x-httpd-php' >> /etc/httpd/conf.d/php.conf && \
+    echo '</FilesMatch>' >> /etc/httpd/conf.d/php.conf && \
+    echo '' >> /etc/httpd/conf.d/php.conf && \
+    echo '# PHP Index files' >> /etc/httpd/conf.d/php.conf && \
+    echo 'DirectoryIndex index.php index.html' >> /etc/httpd/conf.d/php.conf && \
+    echo '' >> /etc/httpd/conf.d/php.conf && \
+    echo '# PHP file types' >> /etc/httpd/conf.d/php.conf && \
+    echo 'AddType application/x-httpd-php .php' >> /etc/httpd/conf.d/php.conf && \
+    echo 'AddType application/x-httpd-php-source .phps' >> /etc/httpd/conf.d/php.conf && \
+    echo "Apache PHP handler configured successfully"
+
+# 复制启动脚本、钩子管理器和数据库初始化脚本
+COPY 03.cicd/svnadmin_docker/start.sh /root/start.sh
+COPY 03.cicd/svnadmin_docker/hook_manager.sh /root/hook_manager.sh
+COPY 03.cicd/svnadmin_docker/db_auto_init.sh /root/db_auto_init.sh
+
+# 设置权限（与原项目完全一致）
+RUN chown -R apache:apache /home/svnadmin/ && \
+    chown -R apache:apache /var/www/html/ && \
+    chmod -R 755 /var/www/html && \
+    chmod -R 777 /var/www/html/logs && \
+    chmod -R 777 /var/www/html/templete/database 2>/dev/null || true && \
+    chmod -R 777 /var/www/html/templete/pid 2>/dev/null || true && \
+    chmod +x /root/start.sh && \
+    chmod +x /root/hook_manager.sh && \
+    chmod +x /root/db_auto_init.sh && \
+    # 创建svnserve.log文件（在权限设置之后）
+    touch /home/svnadmin/logs/svnserve.log && \
+    chown apache:apache /home/svnadmin/logs/svnserve.log && \
+    chmod 664 /home/svnadmin/logs/svnserve.log
+
+# 暴露端口（与原项目完全一致）
+EXPOSE 80
+EXPOSE 443
+EXPOSE 3690
+
+# 启动命令（与原项目完全一致）
+CMD ["/root/start.sh"]

@@ -1,0 +1,2 @@
+# HTTP password file for Apache authentication
+# Format: username:encrypted_password

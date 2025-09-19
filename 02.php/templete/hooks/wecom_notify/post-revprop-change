@@ -1,0 +1,65 @@
+#!/bin/sh
+
+# 企业微信通知 post-revprop-change 钩子脚本
+# 在修订属性更改后发送通知
+
+# ==================== 配置区域 ====================
+
+# SVNAdmin 安装路径（必须修改为实际路径）
+SVNADMIN_PATH="/var/www/html/svnadmin"
+
+# PHP 可执行文件路径
+PHP_PATH="/usr/bin/php"
+
+# 日志文件路径
+LOG_FILE="/var/log/svnadmin/wecom_notify.log"
+
+# ==================== 脚本开始 ====================
+
+# 获取传入的参数
+REPOS="$1"
+REV="$2"
+USER="$3"
+PROPNAME="$4"
+ACTION="$5"
+
+# 获取仓库名称
+REPO_NAME=$(basename "$REPOS")
+
+# 获取当前时间戳
+TIMESTAMP=$(date '+%Y-%m-d H:%M:%S')
+
+# 日志函数
+log_message() {
+    echo "[$TIMESTAMP] $1" >> "$LOG_FILE"
+}
+
+# 检查必要的参数
+if [ -z "$REPOS" ] || [ -z "$REV" ] || [ -z "$USER" ] || [ -z "$PROPNAME" ]; then
+    log_message "ERROR: Missing required parameters"
+    exit 1
+fi
+
+# 只处理日志消息的修改
+if [ "$PROPNAME" != "svn:log" ]; then
+    log_message "Ignoring property change: $PROPNAME"
+    exit 0
+fi
+
+log_message "Processing revprop change: repo=$REPO_NAME, rev=$REV, user=$USER, prop=$PROPNAME, action=$ACTION"
+
+# 获取新的日志消息
+NEW_MESSAGE=$(svnlook propget --revprop -r "$REV" "$REPOS" svn:log 2>/dev/null)
+
+# 调用 PHP 通知脚本
+cd "$SVNADMIN_PATH"
+"$PHP_PATH" "02.php/app/script/wecom_notify.php" update "$REPO_NAME" "$REV" "$USER" "Property $PROPNAME changed: $NEW_MESSAGE" >> "$LOG_FILE" 2>&1
+
+# 记录结果
+if [ $? -eq 0 ]; then
+    log_message "Notification sent successfully"
+else
+    log_message "Notification failed"
+fi
+
+exit 0

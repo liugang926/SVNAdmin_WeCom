@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>企业微信钩子管理</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        .code-block {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 0.375rem;
+            padding: 1rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .stats-card {
+            border-left: 4px solid #0d6efd;
+        }
+        .log-monitor {
+            background-color: #f8f9fa;
+            border-radius: 0.375rem;
+            padding: 1rem;
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid py-4">
+        <div class="row">
+            <div class="col-12">
+                <h1 class="mb-4">
+                    <i class="bi bi-gear"></i> 企业微信钩子管理
+                </h1>
+            </div>
+        </div>
+
+        <!-- 统计信息 -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <div class="card-body">
+                        <h5 class="card-title">总处理数</h5>
+                        <h2 class="text-primary" id="totalProcessed">-</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <div class="card-body">
+                        <h5 class="card-title">成功数</h5>
+                        <h2 class="text-success" id="successCount">-</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <div class="card-body">
+                        <h5 class="card-title">失败数</h5>
+                        <h2 class="text-danger" id="failedCount">-</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <div class="card-body">
+                        <h5 class="card-title">待处理</h5>
+                        <h2 class="text-warning" id="pendingLogs">-</h2>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 操作面板 -->
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="bi bi-code-slash"></i> 生成钩子代码</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="generateHookForm">
+                            <div class="mb-3">
+                                <label for="repoName" class="form-label">仓库名称</label>
+                                <input type="text" class="form-control" id="repoName" required>
+                                <div class="form-text">输入要生成钩子的仓库名称</div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="repoPath" class="form-label">仓库路径 (可选)</label>
+                                <input type="text" class="form-control" id="repoPath">
+                                <div class="form-text">仓库的完整路径，留空则自动检测</div>
+                            </div>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-gear"></i> 生成钩子代码
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="bi bi-cloud-upload"></i> 自动部署钩子</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="deployHookForm">
+                            <div class="mb-3">
+                                <label for="ruleId" class="form-label">通知规则ID</label>
+                                <input type="number" class="form-control" id="ruleId" required>
+                                <div class="form-text">选择要部署钩子的通知规则</div>
+                            </div>
+                            <div class="mb-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="forceOverwrite">
+                                    <label class="form-check-label" for="forceOverwrite">
+                                        强制覆盖现有钩子
+                                    </label>
+                                    <div class="form-text text-warning">
+                                        <i class="bi bi-exclamation-triangle"></i> 
+                                        警告：这将覆盖现有的post-commit钩子文件
+                                    </div>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-warning">
+                                <i class="bi bi-cloud-upload"></i> 自动部署钩子
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 日志监控 -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5><i class="bi bi-activity"></i> 日志监控</h5>
+                        <div>
+                            <button class="btn btn-sm btn-outline-primary" onclick="refreshStats()">
+                                <i class="bi bi-arrow-clockwise"></i> 刷新统计
+                            </button>
+                            <button class="btn btn-sm btn-success" onclick="triggerMonitoring()">
+                                <i class="bi bi-play"></i> 手动监控
+                            </button>
+                            <button class="btn btn-sm btn-info" onclick="testHook()">
+                                <i class="bi bi-bug"></i> 测试钩子
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="log-monitor" id="logMonitor">
+                            <p class="text-muted">点击"手动监控"开始扫描日志文件...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 钩子代码显示 -->
+        <div class="row mt-4" id="hookCodeSection" style="display: none;">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5><i class="bi bi-file-code"></i> 生成的钩子代码</h5>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="copyHookCode()">
+                            <i class="bi bi-clipboard"></i> 复制代码
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="code-block" id="hookCodeDisplay"></div>
+                        <div class="mt-3">
+                            <h6>部署说明：</h6>
+                            <ol id="deployInstructions"></ol>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // 页面加载时获取统计信息
+        document.addEventListener('DOMContentLoaded', function() {
+            refreshStats();
+        });
+
+        // 刷新统计信息
+        function refreshStats() {
+            fetch('/api/wecom/hook/stats', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 1) {
+                    document.getElementById('totalProcessed').textContent = data.data.stats.total_processed || 0;
+                    document.getElementById('successCount').textContent = data.data.stats.successful || 0;
+                    document.getElementById('failedCount').textContent = data.data.stats.failed || 0;
+                    document.getElementById('pendingLogs').textContent = data.data.pending_logs || 0;
+                }
+            })
+            .catch(error => {
+                console.error('获取统计信息失败:', error);
+            });
+        }
+
+        // 生成钩子代码
+        document.getElementById('generateHookForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const repoName = document.getElementById('repoName').value;
+            const repoPath = document.getElementById('repoPath').value;
+            
+            fetch('/api/wecom/hook/generate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    repo_name: repoName,
+                    repo_path: repoPath
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 1) {
+                    showHookCode(data.data.hook_code, data.data.instructions);
+                    showAlert('钩子代码生成成功', 'success');
+                } else {
+                    showAlert('生成失败: ' + data.message, 'danger');
+                }
+            })
+            .catch(error => {
+                showAlert('请求失败: ' + error.message, 'danger');
+            });
+        });
+
+        // 自动部署钩子
+        document.getElementById('deployHookForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const ruleId = document.getElementById('ruleId').value;
+            const forceOverwrite = document.getElementById('forceOverwrite').checked;
+            
+            if (!confirm('确定要自动部署钩子吗？这可能会覆盖现有的钩子文件。')) {
+                return;
+            }
+            
+            fetch('/api/wecom/hook/deploy', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    rule_id: ruleId,
+                    force_overwrite: forceOverwrite
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 1) {
+                    showAlert(data.message, 'success');
+                    showDeployResults(data.data.results);
+                } else {
+                    showAlert('部署失败: ' + data.message, 'danger');
+                }
+            })
+            .catch(error => {
+                showAlert('请求失败: ' + error.message, 'danger');
+            });
+        });
+
+        // 手动触发监控
+        function triggerMonitoring() {
+            const logMonitor = document.getElementById('logMonitor');
+            logMonitor.innerHTML = '<p class="text-info"><i class="bi bi-hourglass-split"></i> 正在扫描日志文件...</p>';
+            
+            fetch('/api/wecom/hook/monitor', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 1) {
+                    logMonitor.innerHTML = `<p class="text-success"><i class="bi bi-check-circle"></i> ${data.message}</p>`;
+                    refreshStats();
+                } else {
+                    logMonitor.innerHTML = `<p class="text-danger"><i class="bi bi-x-circle"></i> ${data.message}</p>`;
+                }
+            })
+            .catch(error => {
+                logMonitor.innerHTML = `<p class="text-danger"><i class="bi bi-x-circle"></i> 监控失败: ${error.message}</p>`;
+            });
+        }
+
+        // 测试钩子
+        function testHook() {
+            const repoName = prompt('请输入测试仓库名称:', 'test');
+            if (!repoName) return;
+            
+            fetch('/api/wecom/hook/test', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    repo_name: repoName,
+                    revision: '1'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 1) {
+                    showAlert('测试完成: ' + data.data.processing_result.message, 'success');
+                    refreshStats();
+                } else {
+                    showAlert('测试失败: ' + data.message, 'danger');
+                }
+            })
+            .catch(error => {
+                showAlert('测试失败: ' + error.message, 'danger');
+            });
+        }
+
+        // 显示钩子代码
+        function showHookCode(code, instructions) {
+            document.getElementById('hookCodeDisplay').textContent = code;
+            
+            const instructionsList = document.getElementById('deployInstructions');
+            instructionsList.innerHTML = '';
+            instructions.forEach(instruction => {
+                const li = document.createElement('li');
+                li.textContent = instruction;
+                instructionsList.appendChild(li);
+            });
+            
+            document.getElementById('hookCodeSection').style.display = 'block';
+        }
+
+        // 复制钩子代码
+        function copyHookCode() {
+            const code = document.getElementById('hookCodeDisplay').textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                showAlert('钩子代码已复制到剪贴板', 'success');
+            });
+        }
+
+        // 显示部署结果
+        function showDeployResults(results) {
+            let html = '<h6>部署结果:</h6><ul>';
+            results.forEach(result => {
+                const statusClass = result.status === 1 ? 'text-success' : 'text-danger';
+                const icon = result.status === 1 ? 'bi-check-circle' : 'bi-x-circle';
+                html += `<li class="${statusClass}"><i class="bi ${icon}"></i> ${result.repo_name}: ${result.message}</li>`;
+            });
+            html += '</ul>';
+            
+            const logMonitor = document.getElementById('logMonitor');
+            logMonitor.innerHTML = html;
+        }
+
+        // 显示提示信息
+        function showAlert(message, type) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            
+            document.body.insertBefore(alertDiv, document.body.firstChild);
+            
+            setTimeout(() => {
+                alertDiv.remove();
+            }, 5000);
+        }
+    </script>
+</body>
+</html>

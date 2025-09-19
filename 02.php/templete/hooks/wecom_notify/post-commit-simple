@@ -1,0 +1,82 @@
+#!/bin/sh
+
+# 企业微信通知 post-commit 钩子脚本（简化版）
+# 使用统一的 PHP 通知脚本处理
+
+# ==================== 配置区域 ====================
+
+# SVNAdmin 安装路径（必须修改为实际路径）
+SVNADMIN_PATH="/var/www/html/svnadmin"
+
+# PHP 可执行文件路径
+PHP_PATH="/usr/bin/php"
+
+# 日志文件路径
+LOG_FILE="/var/log/svnadmin/wecom_notify.log"
+
+# ==================== 脚本开始 ====================
+
+# 获取传入的参数
+REPOS="$1"
+REV="$2"
+
+# 获取仓库名称（从路径中提取）
+REPO_NAME=$(basename "$REPOS")
+
+# 获取当前时间戳
+TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+
+# 日志函数
+log_message() {
+    echo "[$TIMESTAMP] $1" >> "$LOG_FILE"
+}
+
+# 检查必要的参数
+if [ -z "$REPOS" ] || [ -z "$REV" ]; then
+    log_message "ERROR: Missing required parameters: REPOS=$REPOS, REV=$REV"
+    exit 1
+fi
+
+# 检查路径
+if [ ! -d "$SVNADMIN_PATH" ]; then
+    log_message "ERROR: SVNAdmin path not found: $SVNADMIN_PATH"
+    exit 1
+fi
+
+if [ ! -x "$PHP_PATH" ]; then
+    log_message "ERROR: PHP executable not found: $PHP_PATH"
+    exit 1
+fi
+
+# 获取提交信息
+AUTHOR=$(svnlook author -r "$REV" "$REPOS" 2>/dev/null)
+MESSAGE=$(svnlook log -r "$REV" "$REPOS" 2>/dev/null)
+CHANGED_PATHS=$(svnlook changed -r "$REV" "$REPOS" 2>/dev/null | head -20)
+
+# 检查 svnlook 命令是否成功
+if [ $? -ne 0 ]; then
+    log_message "ERROR: Failed to get commit information using svnlook"
+    exit 1
+fi
+
+log_message "Processing commit: repo=$REPO_NAME, rev=$REV, author=$AUTHOR"
+
+# 转换文件列表为参数
+FILES_ARGS=""
+if [ -n "$CHANGED_PATHS" ]; then
+    FILES_ARGS=$(echo "$CHANGED_PATHS" | tr '\n' ' ')
+fi
+
+# 调用 PHP 通知脚本
+cd "$SVNADMIN_PATH"
+"$PHP_PATH" "02.php/app/script/wecom_notify.php" commit "$REPO_NAME" "$REV" "$AUTHOR" "$MESSAGE" $FILES_ARGS >> "$LOG_FILE" 2>&1
+
+# 记录结果
+if [ $? -eq 0 ]; then
+    log_message "Notification sent successfully"
+else
+    log_message "Notification failed"
+fi
+
+# 退出（不影响 SVN 提交）
+exit 0

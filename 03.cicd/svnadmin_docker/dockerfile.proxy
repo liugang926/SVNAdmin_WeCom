@@ -1,0 +1,78 @@
+FROM centos:centos7.9.2009
+
+LABEL MAINTAINER "www.witersen.com 2023-07-23"
+
+# 接收代理参数
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG http_proxy
+ARG https_proxy
+ARG NO_PROXY
+
+# 设置代理环境变量
+ENV HTTP_PROXY=${HTTP_PROXY}
+ENV HTTPS_PROXY=${HTTPS_PROXY}
+ENV http_proxy=${http_proxy}
+ENV https_proxy=${https_proxy}
+ENV NO_PROXY=${NO_PROXY}
+
+# 时间同步
+ENV TZ=Asia/Shanghai \
+    DEBIAN_FRONTEND=noninteractive
+
+ADD 01.web/ /root/svnadmin_web/
+ADD 02.php/ /var/www/html/
+ADD 03.cicd/svnadmin_docker/start.sh /root/start.sh
+ADD 03.cicd/svnadmin_docker/data/ /home/svnadmin/
+
+RUN ln -fs /usr/share/zoneinfo/${TZ} /etc/localtime \
+    && echo ${TZ} > /etc/timezone \
+    && localedef -c -i en_US -f UTF-8 C.UTF-8 \
+    && echo 'LANG="C.UTF-8"' >> /etc/sysconfig/i18n \
+    && echo 'LC_ALL="C.UTF-8"' >> /etc/sysconfig/i18n \
+    && echo 'export LANG="C.UTF-8"' >> /etc/profile \
+    && echo 'export LC_ALL="C.UTF-8"' >> /etc/profile\
+    && curl -o /etc/yum.repos.d/CentOS-Base.repo https://mirrors.aliyun.com/repo/Centos-7.repo \
+    && echo -e "[WandiscoSVN]\nname=Wandisco SVN Repo\nbaseurl=http://opensource.wandisco.com/centos/7/svn-${svn_version}/RPMS/x86_64/\nenabled=1\ngpgcheck=0" >/etc/yum.repos.d/wandisco-svn.repo \
+    && yum clean all \
+    && yum makecache \
+    && yum install -y epel-release yum-utils \
+    && rpm -Uvh https://mirrors.aliyun.com/remi/enterprise/remi-release-7.rpm \
+    && yum-config-manager --enable remi-${php_version} \
+    && yum install -y php php-common php-cli php-fpm php-json php-mysqlnd php-mysql php-pdo php-process php-json php-gd php-bcmath php-ldap php-mbstring php-curl php-openssl\
+    && yum install -y httpd mod_dav_svn mod_ldap mod_php subversion subversion-tools \
+    && yum install -y cyrus-sasl cyrus-sasl-lib cyrus-sasl-plain \
+    && yum install -y which \
+    && yum install -y cronie at \
+    && yum clean all \
+    && cd /home/svnadmin/ \
+    && mkdir -p backup \
+    && mkdir -p crond \
+    && mkdir -p rep \
+    && mkdir -p temp \
+    && mkdir -p templete/initStruct/01/branches \
+    && mkdir -p templete/initStruct/01/tags \
+    && mkdir -p templete/initStruct/01/trunk \
+    && mkdir -p templete/pid \
+    && mkdir -p logs \
+    && mkdir -p templete/hooks/wecom_notify \
+    && chown -R apache:apache /home/svnadmin/ && mkdir -p /run/php-fpm/ \
+    && sed -i 's/expose_php = On/expose_php = Off/g' /etc/php.ini \
+    && curl -L -o /usr/local/node-v14.18.2-linux-x64.tar.gz https://cdn.npmmirror.com/binaries/node/latest-v14.x/node-v14.18.2-linux-x64.tar.gz \
+    && tar -xvf /usr/local/node-v14.18.2-linux-x64.tar.gz -C /usr/local/ \
+    && ln -s /usr/local/node-v14.18.2-linux-x64/bin/node /usr/local/bin/node \
+    && ln -s /usr/local/node-v14.18.2-linux-x64/bin/npm /usr/local/bin/npm \
+    && npm config set registry https://registry.npmmirror.com \
+    && cd /root/svnadmin_web \
+    && npm install \
+    && npm run build \
+    && mv dist/* /var/www/html/ \
+    && rm -rf /root/svnadmin_web \
+    && rm -rf /usr/local/node-v14.18.2-linux-x64* \
+    && chmod +x /root/start.sh
+
+EXPOSE 80
+EXPOSE 443
+EXPOSE 3690
+
+CMD ["/root/start.sh"]

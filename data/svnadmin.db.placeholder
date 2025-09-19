@@ -1,0 +1,23 @@
+# SVNAdmin Database Placeholder
+# 
+# The actual database will be created automatically when the container starts.
+# 
+# To create a clean database manually, run one of these commands:
+#
+# Option 1: Using SQLite directly (if installed)
+# sqlite3 svnadmin.db < init_clean_db.sql
+#
+# Option 2: Using Docker
+# docker run --rm -v "$PWD:/data" alpine:latest sh -c "apk add --no-cache sqlite && cd /data && sqlite3 svnadmin.db < init_clean_db.sql"
+#
+# The database includes the following tables:
+# - svn_users: SVN user accounts
+# - svn_groups: SVN groups
+# - svn_reps: SVN repositories
+# - svn_rep_paths: Repository path permissions
+# - svn_pri_paths: Permission paths
+# - svn_admins: Administrator accounts (default: admin/admin)
+# - wecom_*: WeChat Work integration tables
+#
+# Default admin credentials: admin/admin
+# Please change the password after first login!

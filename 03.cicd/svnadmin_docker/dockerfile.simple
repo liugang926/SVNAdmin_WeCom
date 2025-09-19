@@ -1,0 +1,121 @@
+FROM centos:7
+
+LABEL MAINTAINER "www.witersen.com 2023-07-23"
+
+# 接收代理参数
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG http_proxy
+ARG https_proxy
+ARG NO_PROXY
+
+# 设置代理环境变量
+ENV HTTP_PROXY=${HTTP_PROXY}
+ENV HTTPS_PROXY=${HTTPS_PROXY}
+ENV http_proxy=${http_proxy}
+ENV https_proxy=${https_proxy}
+ENV NO_PROXY=${NO_PROXY}
+
+# 时间同步和BASE_PATH
+ENV TZ=Asia/Shanghai \
+    DEBIAN_FRONTEND=noninteractive \
+    BASE_PATH=/var/www/html
+
+# 复制文件
+ADD 01.web/ /root/svnadmin_web/
+ADD 02.php/ /var/www/html/
+ADD 03.cicd/svnadmin_docker/start.sh /root/start.sh
+ADD 03.cicd/svnadmin_docker/data/ /home/svnadmin/
+
+# 基础设置
+RUN ln -fs /usr/share/zoneinfo/${TZ} /etc/localtime \
+    && echo ${TZ} > /etc/timezone \
+    && localedef -c -i en_US -f UTF-8 C.UTF-8 \
+    && echo 'LANG="C.UTF-8"' >> /etc/sysconfig/i18n \
+    && echo 'LC_ALL="C.UTF-8"' >> /etc/sysconfig/i18n \
+    && echo 'export LANG="C.UTF-8"' >> /etc/profile \
+    && echo 'export LC_ALL="C.UTF-8"' >> /etc/profile
+
+# 配置 yum 源（使用阿里云镜像，更稳定）
+RUN sed -i 's|^mirrorlist=|#mirrorlist=|g' /etc/yum.repos.d/CentOS-*.repo \
+    && sed -i 's|^#baseurl=http://mirror.centos.org|baseurl=https://mirrors.aliyun.com|g' /etc/yum.repos.d/CentOS-*.repo \
+    && yum clean all \
+    && yum makecache
+
+# 安装基础软件包（关闭GPG校验并带重试，提升在旧源/网络不稳时的成功率）
+# 设置构建时的代理参数
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG http_proxy
+ARG https_proxy
+ARG NO_PROXY
+
+# 配置代理环境变量
+ENV http_proxy=$HTTP_PROXY
+ENV https_proxy=$HTTPS_PROXY
+ENV HTTP_PROXY=$HTTP_PROXY
+ENV HTTPS_PROXY=$HTTPS_PROXY
+ENV NO_PROXY=$NO_PROXY
+
+RUN yum clean all && yum makecache \
+    && (yum install -y --nogpgcheck epel-release yum-utils wget curl \
+        || (yum clean all && yum makecache && yum install -y --nogpgcheck epel-release yum-utils wget curl))
+
+# 安装 PHP 7.2
+RUN export http_proxy=$HTTP_PROXY && \
+    export https_proxy=$HTTPS_PROXY && \
+    yum install -y --nogpgcheck centos-release-scl && \
+    yum install -y --nogpgcheck rh-php72 rh-php72-php rh-php72-php-fpm rh-php72-php-common rh-php72-php-cli rh-php72-php-json rh-php72-php-mysqlnd rh-php72-php-pdo rh-php72-php-gd rh-php72-php-mbstring rh-php72-php-curl && \
+    ln -sf /opt/rh/rh-php72/root/usr/bin/php /usr/bin/php && \
+    ln -sf /opt/rh/rh-php72/root/usr/sbin/php-fpm /usr/sbin/php-fpm
+
+# 安装 Apache 和 SVN
+RUN export http_proxy=$HTTP_PROXY && \
+    export https_proxy=$HTTPS_PROXY && \
+    yum install -y --nogpgcheck --disablerepo=epel httpd mod_php subversion subversion-tools \
+    && yum install -y --nogpgcheck --disablerepo=epel cyrus-sasl cyrus-sasl-lib cyrus-sasl-plain \
+    && yum install -y --nogpgcheck --disablerepo=epel which cronie at \
+    && yum clean all
+
+# 创建目录结构
+RUN cd /home/svnadmin/ \
+    && mkdir -p backup crond rep temp logs \
+    && mkdir -p templete/initStruct/01/{branches,tags,trunk} \
+    && mkdir -p templete/pid \
+    && mkdir -p templete/hooks/wecom_notify \
+    && chown -R apache:apache /home/svnadmin/ \
+    && mkdir -p /run/php-fpm/
+
+# 配置 PHP
+RUN sed -i 's/expose_php = On/expose_php = Off/g' /etc/php.ini
+
+# 安装 Node.js（使用国内镜像）
+RUN export http_proxy=$HTTP_PROXY && \
+    export https_proxy=$HTTPS_PROXY && \
+    curl -L -o /usr/local/node-v14.18.2-linux-x64.tar.gz https://cdn.npmmirror.com/binaries/node/latest-v14.x/node-v14.18.2-linux-x64.tar.gz \
+    && tar -xvf /usr/local/node-v14.18.2-linux-x64.tar.gz -C /usr/local/ \
+    && ln -s /usr/local/node-v14.18.2-linux-x64/bin/node /usr/local/bin/node \
+    && ln -s /usr/local/node-v14.18.2-linux-x64/bin/npm /usr/local/bin/npm
+
+# 配置 npm 并构建前端
+RUN npm config set registry https://registry.npmmirror.com \
+    && cd /root/svnadmin_web \
+    && npm install \
+    && npm run build \
+    && mv dist/* /var/www/html/ \
+    && rm -rf /root/svnadmin_web \
+    && rm -rf /usr/local/node-v14.18.2-linux-x64*
+
+# 设置文件权限
+RUN chmod +x /root/start.sh \
+    && chown -R apache:apache /var/www/html \
+    && chmod -R 755 /var/www/html \
+    && chmod 755 /var/www/html/config \
+    && chmod 644 /var/www/html/config/*.php \
+    && chmod 666 /var/www/html/config/wecom.php
+
+EXPOSE 80
+EXPOSE 443
+EXPOSE 3690
+
+CMD ["/root/start.sh"]
