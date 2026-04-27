@@ -20,11 +20,11 @@ module.exports = {
                         options: {
                             loaders: {
                                 less: ExtractTextPlugin.extract({
-                                    use: ['css-loader?minimize', 'autoprefixer-loader', 'less-loader'],
+                                    use: ['css-loader?minimize', 'less-loader'],
                                     fallback: 'vue-style-loader'
                                 }),
                                 css: ExtractTextPlugin.extract({
-                                    use: ['css-loader?minimize', 'autoprefixer-loader'],
+                                    use: ['css-loader?minimize'],
                                     fallback: 'vue-style-loader'
                                 })
                             }
@@ -57,14 +57,14 @@ module.exports = {
             {
                 test: /\.css$/,
                 use: ExtractTextPlugin.extract({
-                    use: ['css-loader?minimize', 'autoprefixer-loader'],
+                    use: ['css-loader?minimize'],
                     fallback: 'style-loader'
                 })
             },
             {
                 test: /\.less/,
                 use: ExtractTextPlugin.extract({
-                    use: ['css-loader?minimize', 'autoprefixer-loader', 'less-loader'],
+                    use: ['css-loader?minimize', 'less-loader'],
                     fallback: 'style-loader'
                 })
             },
@@ -82,6 +82,7 @@ module.exports = {
         extensions: ['.js', '.vue'],
         alias: {
             'vue': 'vue/dist/vue.esm.js',
+            'axios$': path.join(__dirname, 'node_modules/axios/dist/axios.min.js'),
             '@': resolve('src')
         }
     }
