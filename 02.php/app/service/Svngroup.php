@@ -39,6 +39,7 @@ class Svngroup extends Base
      */
     public function SyncGroup()
     {
+        $syncData = [];
         if ($this->enableCheckout == 'svn') {
             $dataSource = $this->svnDataSource;
         } else {
@@ -48,12 +49,39 @@ class Svngroup extends Base
         if ($dataSource['user_source'] == 'ldap' && $dataSource['group_source'] == 'ldap') {
             $result = $this->ServiceLdap->SyncLdapToAuthz();
             if ($result['status'] != 1) {
+                $this->ServiceLogs->InsertSyncAuditLog(
+                    '分组同步',
+                    '失败',
+                    $result['message'],
+                    [],
+                    '检查LDAP连接、分组搜索过滤器、字段映射和authz文件状态后重新同步',
+                    $this->userName
+                );
                 return message($result['code'], $result['status'], $result['message'], $result['data']);
             }
 
+            $syncData = is_array($result['data']) ? $result['data'] : [];
+            if (!empty($syncData['skippedConflictGroups'])) {
+                $this->ServiceLogs->InsertSyncAuditLog(
+                    '分组同步',
+                    '部分跳过',
+                    'LDAP分组与手工分组同名',
+                    $syncData['skippedConflictGroups'],
+                    '重命名手工分组，或调整LDAP分组映射/固定前缀后重新同步',
+                    $this->userName
+                );
+            }
             $groupDetails = isset($result['data']['groupDetails']) ? $result['data']['groupDetails'] : [];
             $result = $this->SyncAuthzToDb('ldap', $groupDetails);
             if ($result['status'] != 1) {
+                $this->ServiceLogs->InsertSyncAuditLog(
+                    '分组同步',
+                    '失败',
+                    $result['message'],
+                    [],
+                    '检查authz文件格式和数据库分组字段后重新同步',
+                    $this->userName
+                );
                 return message($result['code'], $result['status'], $result['message'], $result['data']);
             }
         } else {
@@ -63,7 +91,9 @@ class Svngroup extends Base
             }
         }
 
-        return message();
+        return message(200, 1, '成功', [
+            'skippedConflictGroups' => isset($syncData['skippedConflictGroups']) ? $syncData['skippedConflictGroups'] : []
+        ]);
     }
 
     /**
@@ -229,6 +259,7 @@ class Svngroup extends Base
         $sync = $this->payload['sync'];
         $page = $this->payload['page'];
         $searchKeyword = trim($this->payload['searchKeyword']);
+        $syncData = [];
 
         if ($sync) {
             //同步
@@ -236,6 +267,7 @@ class Svngroup extends Base
             if ($syncResult['status'] != 1) {
                 return message($syncResult['code'], $syncResult['status'], $syncResult['message'], $syncResult['data']);
             }
+            $syncData = is_array($syncResult['data']) ? $syncResult['data'] : [];
         }
 
         if ($page) {
@@ -317,7 +349,8 @@ class Svngroup extends Base
 
         return message(200, 1, '成功', [
             'data' => array_values($result),
-            'total' => $total
+            'total' => $total,
+            'sync' => $syncData
         ]);
     }
 

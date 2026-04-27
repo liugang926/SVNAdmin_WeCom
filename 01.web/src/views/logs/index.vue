@@ -29,6 +29,14 @@
               >导出日志</Button
             >
           </download-excel>
+          <Button
+            icon="ios-funnel-outline"
+            type="primary"
+            ghost
+            style="margin-left: 8px"
+            @click="ShowSyncAudit"
+            >同步审计</Button
+          >
         </Col>
         <Col :xs="3" :sm="4" :md="5" :lg="6">
           <Input
@@ -40,6 +48,9 @@
             @on-search="SearchGetLogList"
         /></Col>
       </Row>
+      <Alert v-if="searchKeywordLog == 'LDAP同步审计'" type="warning" show-icon>
+        当前仅显示LDAP同步审计记录，请根据失败或跳过原因处理LDAP映射、本地命名冲突或目录数据后重新同步。
+      </Alert>
       <Table
         border
         :loading="loadingGetLogList"
@@ -164,6 +175,11 @@ export default {
       //   this.$Message.error("请输入搜索内容");
       //   return;
       // }
+      this.GetLogList();
+    },
+    ShowSyncAudit() {
+      this.searchKeywordLog = "LDAP同步审计";
+      this.pageCurrentLog = 1;
       this.GetLogList();
     },
     GetLogList() {

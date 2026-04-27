@@ -942,6 +942,39 @@ export default {
       this.pageCurrentUser = value;
       this.GetUserList();
     },
+    ShowUserSyncWarning(skippedUsers) {
+      if (!skippedUsers || skippedUsers.length == 0) {
+        return;
+      }
+
+      this.$Modal.warning({
+        title: "LDAP用户同步存在跳过项",
+        render: function (h) {
+          return h("div", [
+            h(
+              "p",
+              "以下LDAP用户因用户名不符合SVN用户名规则，已跳过同步，其它用户已继续同步。详情已写入系统日志的LDAP同步审计，请调整LDAP用户名映射或LDAP侧用户数据后重新同步。"
+            ),
+            h(
+              "ul",
+              {
+                style: {
+                  marginTop: "8px",
+                  paddingLeft: "18px",
+                  maxHeight: "180px",
+                  overflow: "auto",
+                },
+              },
+              skippedUsers.map(function (item) {
+                var name = item.objectName || item.name || "";
+                var reason = item.reason ? "：" + item.reason : "";
+                return h("li", name + reason);
+              })
+            ),
+          ]);
+        },
+      });
+    },
     GetUserList(sync = false, page = true) {
       var that = this;
       that.loadingUser = true;
@@ -965,6 +998,13 @@ export default {
             // that.$Message.success(result.message);
             that.tableDataUser = result.data.data;
             that.totalUser = result.data.total;
+            var skippedUsers =
+              result.data.sync && result.data.sync.skippedInvalidUsers
+                ? result.data.sync.skippedInvalidUsers
+                : [];
+            if (sync) {
+              that.ShowUserSyncWarning(skippedUsers);
+            }
           } else {
             that.$Message.error({ content: result.message, duration: 2 });
           }

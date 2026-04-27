@@ -849,6 +849,70 @@ export default {
     this.loadColumnWidths();
   },
   methods: {
+    ShowUserSyncWarning(skippedUsers) {
+      if (!skippedUsers || skippedUsers.length == 0) {
+        return;
+      }
+
+      this.$Modal.warning({
+        title: "LDAP用户同步存在跳过项",
+        render: function (h) {
+          return h("div", [
+            h(
+              "p",
+              "以下LDAP用户因用户名不符合SVN用户名规则，已跳过同步，其它用户已继续同步。详情已写入系统日志的LDAP同步审计，请调整LDAP用户名映射或LDAP侧用户数据后重新同步。"
+            ),
+            h(
+              "ul",
+              {
+                style: {
+                  marginTop: "8px",
+                  paddingLeft: "18px",
+                  maxHeight: "180px",
+                  overflow: "auto",
+                },
+              },
+              skippedUsers.map(function (item) {
+                var name = item.objectName || item.name || "";
+                var reason = item.reason ? "：" + item.reason : "";
+                return h("li", name + reason);
+              })
+            ),
+          ]);
+        },
+      });
+    },
+    ShowGroupSyncConflictWarning(skippedGroups) {
+      if (!skippedGroups || skippedGroups.length == 0) {
+        return;
+      }
+
+      this.$Modal.warning({
+        title: "LDAP分组同步存在名称冲突",
+        render: function (h) {
+          return h("div", [
+            h(
+              "p",
+              "以下LDAP分组与手工分组同名，已跳过这些LDAP分组的同步，其它分组已继续同步。详情已写入系统日志的LDAP同步审计，请重命名手工分组，或调整LDAP分组映射/固定前缀后重新同步。"
+            ),
+            h(
+              "ul",
+              {
+                style: {
+                  marginTop: "8px",
+                  paddingLeft: "18px",
+                  maxHeight: "180px",
+                  overflow: "auto",
+                },
+              },
+              skippedGroups.map(function (groupName) {
+                return h("li", groupName);
+              })
+            ),
+          ]);
+        },
+      });
+    },
     getDefaultTabName() {
       if (this.showSvnUserTab) {
         return "user";
@@ -1021,6 +1085,13 @@ export default {
           if (result.status == 1) {
             that.tableDataAllUsers = result.data.data;
             that.totalUser = result.data.total;
+            var skippedUsers =
+              result.data.sync && result.data.sync.skippedInvalidUsers
+                ? result.data.sync.skippedInvalidUsers
+                : [];
+            if (sync) {
+              that.ShowUserSyncWarning(skippedUsers);
+            }
           } else {
             that.$Message.error({ content: result.message, duration: 2 });
           }
@@ -1075,6 +1146,13 @@ export default {
           if (result.status == 1) {
             that.tableDataAllGroups = result.data.data;
             that.totalGroup = result.data.total;
+            var skippedGroups =
+              result.data.sync && result.data.sync.skippedConflictGroups
+                ? result.data.sync.skippedConflictGroups
+                : [];
+            if (sync) {
+              that.ShowGroupSyncConflictWarning(skippedGroups);
+            }
           } else {
             that.$Message.error({ content: result.message, duration: 2 });
           }

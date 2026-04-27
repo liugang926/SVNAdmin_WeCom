@@ -584,6 +584,37 @@ export default {
             // that.$Message.success(result.message);
             that.tableGroupData = result.data.data;
             that.totalGroup = result.data.total;
+            var skippedGroups =
+              result.data.sync && result.data.sync.skippedConflictGroups
+                ? result.data.sync.skippedConflictGroups
+                : [];
+            if (sync && skippedGroups.length > 0) {
+              that.$Modal.warning({
+                title: "LDAP分组同步存在名称冲突",
+                render: function (h) {
+                  return h("div", [
+                    h(
+                      "p",
+                      "以下LDAP分组与手工分组同名，已跳过这些LDAP分组的同步，其它分组已继续同步。详情已写入系统日志的LDAP同步审计，请重命名手工分组，或调整LDAP分组映射/固定前缀后重新同步。"
+                    ),
+                    h(
+                      "ul",
+                      {
+                        style: {
+                          marginTop: "8px",
+                          paddingLeft: "18px",
+                          maxHeight: "180px",
+                          overflow: "auto",
+                        },
+                      },
+                      skippedGroups.map(function (groupName) {
+                        return h("li", groupName);
+                      })
+                    ),
+                  ]);
+                },
+              });
+            }
           } else {
             that.$Message.error({ content: result.message, duration: 2 });
           }

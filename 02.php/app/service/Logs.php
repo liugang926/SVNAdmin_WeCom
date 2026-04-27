@@ -94,6 +94,52 @@ class Logs extends Base
     }
 
     /**
+     * 写入同步审计日志
+     */
+    public function InsertSyncAuditLog($objectType = '', $status = '', $reason = '', $items = [], $suggestion = '', $log_add_user_name = '')
+    {
+        $objectType = $objectType == '' ? '同步对象' : $objectType;
+        $status = $status == '' ? '异常' : $status;
+        $content = $objectType . $status;
+
+        if ($reason != '') {
+            $content .= '；原因：' . $reason;
+        }
+
+        if (!empty($items) && is_array($items)) {
+            $names = [];
+            $count = count($items);
+            $index = 0;
+            foreach ($items as $item) {
+                if ($index >= 50) {
+                    $names[] = '...共' . $count . '项';
+                    break;
+                }
+
+                if (is_array($item)) {
+                    $name = isset($item['objectName']) ? $item['objectName'] : (isset($item['name']) ? $item['name'] : '');
+                    $itemReason = isset($item['reason']) ? $item['reason'] : '';
+                    $names[] = $itemReason == '' ? $name : $name . '(' . $itemReason . ')';
+                } else {
+                    $names[] = $item;
+                }
+                $index++;
+            }
+            $content .= '；对象：' . implode('、', $names);
+        }
+
+        if ($suggestion != '') {
+            $content .= '；处理建议：' . $suggestion;
+        }
+
+        $this->InsertLog(
+            'LDAP同步审计',
+            $content,
+            $log_add_user_name == '' ? 'system' : $log_add_user_name
+        );
+    }
+
+    /**
      * 写入文件日志（供新模块使用）
      *
      * @param string $message

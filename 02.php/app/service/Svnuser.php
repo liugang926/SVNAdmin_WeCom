@@ -40,6 +40,7 @@ class Svnuser extends Base
      */
     public function SyncUser()
     {
+        $syncData = [];
         if ($this->enableCheckout == 'svn') {
             $dataSource = $this->svnDataSource;
         } else {
@@ -49,7 +50,26 @@ class Svnuser extends Base
         if ($dataSource['user_source'] == 'ldap') {
             $result = $this->SyncLdapToDb();
             if ($result['status'] != 1) {
+                $this->ServiceLogs->InsertSyncAuditLog(
+                    '用户同步',
+                    '失败',
+                    $result['message'],
+                    [],
+                    '检查LDAP连接、搜索过滤器、字段映射和网络状态后重新同步',
+                    $this->userName
+                );
                 return message($result['code'], $result['status'], $result['message'], $result['data']);
+            }
+            $syncData = is_array($result['data']) ? $result['data'] : [];
+            if (!empty($syncData['skippedInvalidUsers'])) {
+                $this->ServiceLogs->InsertSyncAuditLog(
+                    '用户同步',
+                    '部分跳过',
+                    'LDAP返回的部分用户名不符合SVN用户名规则',
+                    $syncData['skippedInvalidUsers'],
+                    '调整LDAP用户名映射字段，或在LDAP侧修正用户名后重新同步',
+                    $this->userName
+                );
             }
         } elseif ($this->enableCheckout == 'svn') {
             $result = $this->SyncPasswdToDb();
@@ -63,7 +83,7 @@ class Svnuser extends Base
             }
         }
 
-        return message();
+        return message(200, 1, '成功', $syncData);
     }
 
     /**
@@ -179,11 +199,16 @@ class Svnuser extends Base
         $ldapUserData = $ldapUsers['data'];
         $ldapUsers = $ldapUserData['users'];
         $ldapUserDetails = isset($ldapUserData['userDetails']) && is_array($ldapUserData['userDetails']) ? $ldapUserData['userDetails'] : [];
+        $skippedInvalidUsers = [];
 
         //检查用户名是否合法
         foreach ($ldapUsers as $key => $user) {
             $checkResult = $this->checkService->CheckRepUser($user);
             if ($checkResult['status'] != 1) {
+                $skippedInvalidUsers[] = [
+                    'objectName' => $user,
+                    'reason' => $checkResult['message']
+                ];
                 unset($ldapUsers[$key]);
                 unset($ldapUserDetails[$user]);
             }
@@ -268,7 +293,9 @@ class Svnuser extends Base
             ]);
         }
 
-        return message();
+        return message(200, 1, '成功', [
+            'skippedInvalidUsers' => $skippedInvalidUsers
+        ]);
     }
 
     /**
@@ -541,6 +568,7 @@ class Svnuser extends Base
         $sync = $this->payload['sync'];
         $page = $this->payload['page'];
         $searchKeyword = trim($this->payload['searchKeyword']);
+        $syncData = [];
 
         //将SVN用户数据同步到数据库
         if ($sync) {
@@ -548,6 +576,7 @@ class Svnuser extends Base
             if ($syncResult['status'] != 1) {
                 return message($syncResult['code'], $syncResult['status'], $syncResult['message'], $syncResult['data']);
             }
+            $syncData = is_array($syncResult['data']) ? $syncResult['data'] : [];
         } else {
             $warmResult = $this->WarmUserDbIfNeeded();
             if ($warmResult['status'] != 1) {
@@ -653,7 +682,8 @@ class Svnuser extends Base
 
         return message(200, 1, '成功', [
             'data' => array_values($result),
-            'total' => $total
+            'total' => $total,
+            'sync' => $syncData
         ]);
     }
 
