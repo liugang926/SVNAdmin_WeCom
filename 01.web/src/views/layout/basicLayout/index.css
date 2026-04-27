@@ -1,3 +1,18 @@
+.layout-base {
+  height: 100vh;
+  overflow: hidden;
+}
+
+.layout-base > .ivu-layout {
+  height: 100%;
+}
+
+.layout-base > .ivu-layout > .ivu-layout {
+  height: 100%;
+  min-height: 0;
+  padding-top: 64px;
+}
+
 .layout-header {
   background: var(--header-bg) !important;
   box-shadow: var(--shadow-light);
@@ -28,11 +43,12 @@
 
 .layout-sider {
   background: var(--sider-bg) !important;
-  position: fixed;
-  top: 64px;
-  bottom: 0;
+  position: relative;
+  flex: 0 0 200px !important;
+  min-width: 200px !important;
+  max-width: 200px !important;
+  width: 200px !important;
   height: calc(100vh - 64px);
-  left: 0;
   z-index: 99;
   box-shadow: 2px 0 10px 0 rgba(0, 0, 0, 0.03);
   overflow-y: auto;
@@ -92,18 +108,20 @@
 .layout-content-wrapper {
   background: var(--content-bg);
   box-sizing: border-box;
-  height: 100vh;
-  min-height: 100vh;
+  flex: 1;
+  height: calc(100vh - 64px);
+  min-height: 0;
+  min-width: 0;
   overflow-y: auto;
-  padding-top: 64px;
-  padding-left: 200px;
+  padding-top: 0;
+  padding-left: 0;
   transition: all 0.2s ease-in-out;
 }
 
 .layout-content-main {
   padding: 24px;
-  max-width: 1600px;
-  margin: 0 auto;
+  max-width: none;
+  margin: 0;
 }
 
 .header-action-item {

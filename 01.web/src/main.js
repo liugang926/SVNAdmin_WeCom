@@ -53,19 +53,19 @@ router.beforeEach((to, from, next) => {
             accessRouteses.component = routerCom(accessRouteses.component);
             router.addRoute(accessRouteses);
             noRouter = false;
-            next({
+            return next({
                 //保证路由添加完了再进入页面 可以理解为重进一次
                 ...to,
                 // 重进一次 不保留重复历史
                 replace: true,
             });
         }
-        next();
+        return next();
     } else {
         if (to.path == '/login') {
-            next();
+            return next();
         } else {
-            next({ path: '/login' })
+            return next({ path: '/login' })
         }
     }
 });
@@ -82,7 +82,12 @@ router.afterEach((to, from, next) => {
 axios.interceptors.request.use(function (config) {
     if (window.sessionStorage.token) {
         const encodedToken = encodeURIComponent(window.sessionStorage.token);
-        config.headers.common['token'] = encodedToken;
+        config.headers = config.headers || {};
+        if (config.headers.common) {
+            config.headers.common['token'] = encodedToken;
+        } else {
+            config.headers['token'] = encodedToken;
+        }
     }
     return config
 }, function (error) {
