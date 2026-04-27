@@ -8,7 +8,14 @@ CREATE TABLE IF NOT EXISTS "svn_users" (
     "svn_user_pass" TEXT NOT NULL,
     "svn_user_status" INTEGER NOT NULL DEFAULT 1,
     "svn_user_last_login" TEXT DEFAULT '',
-    "svn_user_note" TEXT DEFAULT ''
+    "svn_user_note" TEXT DEFAULT '',
+    "svn_user_real_name" TEXT DEFAULT '',
+    "svn_user_display_name" TEXT DEFAULT '',
+    "svn_user_external_id" TEXT DEFAULT '',
+    "svn_user_dn" TEXT DEFAULT '',
+    "svn_user_source" TEXT DEFAULT 'manual',
+    "svn_user_sync_time" TEXT DEFAULT '',
+    "svn_user_mail" TEXT DEFAULT ''
 );
 
 -- 分组表
@@ -18,7 +25,12 @@ CREATE TABLE IF NOT EXISTS "svn_groups" (
     "svn_group_note" TEXT DEFAULT '',
     "include_user_count" INTEGER DEFAULT 0,
     "include_group_count" INTEGER DEFAULT 0,
-    "include_aliase_count" INTEGER DEFAULT 0
+    "include_aliase_count" INTEGER DEFAULT 0,
+    "svn_group_display_name" TEXT DEFAULT '',
+    "svn_group_source" TEXT DEFAULT 'manual',
+    "svn_group_external_id" TEXT DEFAULT '',
+    "svn_group_dn" TEXT DEFAULT '',
+    "svn_group_sync_time" TEXT DEFAULT ''
 );
 
 -- 仓库表

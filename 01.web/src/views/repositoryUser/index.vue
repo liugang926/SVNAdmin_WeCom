@@ -40,7 +40,7 @@
             v-model="searchKeywordUser"
             search
             enter-button
-            placeholder="通过SVN用户名、备注搜索..."
+            placeholder="通过用户名、姓名、显示别名、邮箱、备注搜索..."
             style="width: 100%"
             @on-search="GetUserList()"
         /></Col>
@@ -80,6 +80,12 @@
             <Icon type="md-close" slot="close"></Icon>
           </i-switch>
         </template>
+        <template slot-scope="{ row }" slot="svn_user_source">
+          <Tag color="blue" v-if="row.svn_user_source == 'ldap'">LDAP</Tag>
+          <Tag color="green" v-else-if="row.svn_user_source == 'passwd'">passwd</Tag>
+          <Tag color="cyan" v-else-if="row.svn_user_source == 'httpPasswd'">httpPasswd</Tag>
+          <Tag color="default" v-else>{{ row.svn_user_source || "manual" }}</Tag>
+        </template>
         <template slot-scope="{ row, index }" slot="svn_user_note">
           <Input
             :border="false"
@@ -91,7 +97,7 @@
           <Button
             type="info"
             size="small"
-            @click="ModalSvnUserPriPath(row.svn_user_name)"
+            @click="ModalSvnUserPriPath(row)"
             >查看</Button
           >
         </template>
@@ -144,6 +150,15 @@
             password
             v-model="formCreateUser.svn_user_pass"
           ></Input>
+        </FormItem>
+        <FormItem label="姓名">
+          <Input v-model="formCreateUser.svn_user_real_name"></Input>
+        </FormItem>
+        <FormItem label="显示别名">
+          <Input v-model="formCreateUser.svn_user_display_name"></Input>
+        </FormItem>
+        <FormItem label="邮箱">
+          <Input v-model="formCreateUser.svn_user_mail"></Input>
         </FormItem>
         <FormItem label="备注">
           <Input v-model="formCreateUser.svn_user_note"></Input>
@@ -254,21 +269,51 @@ user2:passwd2
         >
       </div>
     </Modal>
-    <!-- 对话框-更新SVN用户密码 -->
+    <!-- 对话框-修改SVN用户 -->
     <Modal
       v-model="modalEditUserPass"
       :draggable="true"
       :title="titleEditUser"
-      @on-ok="UpdUserPass"
+      @on-ok="UpdUserInfo"
     >
       <Form :model="formEditUser" :label-width="80">
+        <Alert
+          v-if="formEditUser.svn_user_source == 'ldap'"
+          type="warning"
+          show-icon
+          >LDAP用户资料由LDAP同步维护，本地修改会被下一次同步覆盖。</Alert
+        >
+        <FormItem label="姓名">
+          <Input
+            v-model="formEditUser.svn_user_real_name"
+            :disabled="formEditUser.svn_user_source == 'ldap'"
+          ></Input>
+        </FormItem>
+        <FormItem label="显示别名">
+          <Input
+            v-model="formEditUser.svn_user_display_name"
+            :disabled="formEditUser.svn_user_source == 'ldap'"
+          ></Input>
+        </FormItem>
+        <FormItem label="邮箱">
+          <Input
+            v-model="formEditUser.svn_user_mail"
+            :disabled="formEditUser.svn_user_source == 'ldap'"
+          ></Input>
+        </FormItem>
         <FormItem label="新密码">
-          <Input v-model="formEditUser.svn_user_pass"></Input>
+          <Input
+            v-model="formEditUser.svn_user_pass"
+            type="password"
+            password
+            placeholder="留空则不修改密码"
+            :disabled="formEditUser.svn_user_source == 'ldap'"
+          ></Input>
         </FormItem>
         <FormItem>
           <Button
             type="primary"
-            @click="UpdUserPass"
+            @click="UpdUserInfo"
             :loading="loadingEditUserPass"
             >确定</Button
           >
@@ -375,7 +420,7 @@ user2:passwd2
         <Col span="12">
           <Input
             search
-            placeholder="通过对象名称搜索..."
+            placeholder="通过对象名称、姓名、显示别名、邮箱搜索..."
             v-model="searchKeywordSecondpriObject"
             @on-change="GetSecondpriObjectList"
           />
@@ -383,11 +428,13 @@ user2:passwd2
       </Row>
       <Table
         border
+        resizable
         :height="310"
         size="small"
         :loading="loadingGetSecondpriObject"
         :columns="tableColumnSecondpriObject"
         :data="tableDataSecondpriObject"
+        @on-column-width-resize="onColumnWidthResize"
         style="margin-top: 20px"
       >
         <template slot-scope="{ row }" slot="objectType">
@@ -527,12 +574,20 @@ export default {
       formCreateUser: {
         svn_user_name: "",
         svn_user_pass: "",
+        svn_user_real_name: "",
+        svn_user_display_name: "",
+        svn_user_mail: "",
         svn_user_note: "",
       },
       //编辑用户
       formEditUser: {
         svn_user_name: "",
         svn_user_pass: "",
+        svn_user_real_name: "",
+        svn_user_display_name: "",
+        svn_user_mail: "",
+        svn_user_source: "",
+        svn_user_status: true,
         index: -1,
       },
 
@@ -562,6 +617,38 @@ export default {
           tooltip: true,
           sortable: "custom",
           width: 150,
+          resizable: true,
+        },
+        {
+          title: "姓名",
+          key: "svn_user_real_name",
+          tooltip: true,
+          sortable: "custom",
+          width: 140,
+          resizable: true,
+        },
+        {
+          title: "显示别名",
+          key: "svn_user_display_name",
+          tooltip: true,
+          sortable: "custom",
+          width: 160,
+          resizable: true,
+        },
+        {
+          title: "邮箱",
+          key: "svn_user_mail",
+          tooltip: true,
+          sortable: "custom",
+          width: 190,
+          resizable: true,
+        },
+        {
+          title: "来源",
+          key: "svn_user_source",
+          slot: "svn_user_source",
+          sortable: "custom",
+          width: 120,
           resizable: true,
         },
         {
@@ -717,17 +804,23 @@ export default {
         {
           title: "对象类型",
           slot: "objectType",
-          // width: 125,
+          width: 140,
+          minWidth: 110,
+          resizable: true,
         },
         {
           title: "对象名称",
-          key: "objectName",
+          key: "objectLabel",
           tooltip: true,
-          // width: 115,
+          width: 260,
+          minWidth: 160,
+          resizable: true,
         },
         {
           title: "操作",
           slot: "action",
+          width: 100,
+          resizable: false,
         },
       ],
       tableDataSecondpriObject: [],
@@ -953,6 +1046,9 @@ export default {
       var data = {
         svn_user_name: that.formCreateUser.svn_user_name,
         svn_user_pass: that.formCreateUser.svn_user_pass,
+        svn_user_real_name: that.formCreateUser.svn_user_real_name,
+        svn_user_display_name: that.formCreateUser.svn_user_display_name,
+        svn_user_mail: that.formCreateUser.svn_user_mail,
         svn_user_note: that.formCreateUser.svn_user_note,
       };
       that.$axios
@@ -1042,15 +1138,51 @@ export default {
      */
     ModalEditUserPass(index, svn_user_name) {
       //设置标题
-      this.titleEditUser = "修改密码 - " + svn_user_name;
+      this.titleEditUser = "修改用户 - " + svn_user_name;
       //设置选中用户
       this.formEditUser.svn_user_name = svn_user_name;
-      //设置密码同步到输入框
-      this.formEditUser.svn_user_pass = this.tableDataUser[index].svn_user_pass;
+      const user = this.tableDataUser[index] || {};
+      this.formEditUser.svn_user_real_name = user.svn_user_real_name || "";
+      this.formEditUser.svn_user_display_name =
+        user.svn_user_display_name || svn_user_name;
+      this.formEditUser.svn_user_mail = user.svn_user_mail || "";
+      this.formEditUser.svn_user_source = user.svn_user_source || "";
+      this.formEditUser.svn_user_status = user.svn_user_status;
+      this.formEditUser.svn_user_pass = "";
       //设置选中下标
       this.formEditUser.index = index;
       //显示对话框
       this.modalEditUserPass = true;
+    },
+    UpdUserInfo() {
+      var that = this;
+      that.loadingEditUserPass = true;
+      var data = {
+        svn_user_name: that.formEditUser.svn_user_name,
+        svn_user_pass: that.formEditUser.svn_user_pass,
+        svn_user_status: that.formEditUser.svn_user_status,
+        svn_user_real_name: that.formEditUser.svn_user_real_name,
+        svn_user_display_name: that.formEditUser.svn_user_display_name,
+        svn_user_mail: that.formEditUser.svn_user_mail,
+      };
+      that.$axios
+        .post("api.php?c=Svnuser&a=UpdUserInfo&t=web", data)
+        .then(function (response) {
+          that.loadingEditUserPass = false;
+          var result = response.data;
+          if (result.status == 1) {
+            that.modalEditUserPass = false;
+            that.$Message.success(result.message);
+            that.GetUserList();
+          } else {
+            that.$Message.error({ content: result.message, duration: 2 });
+          }
+        })
+        .catch(function (error) {
+          that.loadingEditUserPass = false;
+          console.log(error);
+          that.$Message.error("出错了 请联系管理员！");
+        });
     },
     UpdUserPass() {
       var that = this;
@@ -1204,8 +1336,16 @@ export default {
     /**
      * 查看权限路径列表
      */
-    ModalSvnUserPriPath(svn_user_name) {
-      this.titleSvnUserPriPath = "用户有权限路径列表 - " + svn_user_name;
+    ModalSvnUserPriPath(user) {
+      const svn_user_name = typeof user === "string" ? user : user.svn_user_name;
+      const svn_user_label =
+        typeof user === "string"
+          ? user
+          : user.svn_user_label ||
+            user.svn_user_display_name ||
+            user.svn_user_real_name ||
+            svn_user_name;
+      this.titleSvnUserPriPath = "用户有权限路径列表 - " + svn_user_label;
       this.modalSvnUserPriPath = true;
       this.currentSvnUserName = svn_user_name;
       this.GetSvnUserRepList2();

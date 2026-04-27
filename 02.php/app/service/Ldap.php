@@ -80,6 +80,321 @@ class Ldap extends Base
         return $str;
     }
 
+    private function splitAttributes($attributes)
+    {
+        if (is_array($attributes)) {
+            $result = $attributes;
+        } else {
+            $result = explode(',', (string)$attributes);
+        }
+
+        $result = array_map('trim', $result);
+        return array_values(array_filter($result, function ($value) {
+            return $value !== '';
+        }));
+    }
+
+    private function appendAttribute(&$attributes, $attribute)
+    {
+        $attribute = trim((string)$attribute);
+        if ($attribute === '' || strtolower($attribute) == 'dn') {
+            return;
+        }
+
+        foreach ($attributes as $item) {
+            if (strtolower($item) == strtolower($attribute)) {
+                return;
+            }
+        }
+
+        $attributes[] = $attribute;
+    }
+
+    private function getLdapAttributeValue($object, $attribute, $default = '')
+    {
+        $attribute = trim((string)$attribute);
+        if ($attribute === '') {
+            return $default;
+        }
+
+        if (strtolower($attribute) == 'dn') {
+            return property_exists($object, 'dn') ? $object->dn : $default;
+        }
+
+        $candidate = null;
+        if (property_exists($object, $attribute)) {
+            $candidate = $attribute;
+        } elseif (property_exists($object, strtolower($attribute))) {
+            $candidate = strtolower($attribute);
+        } else {
+            foreach (get_object_vars($object) as $key => $value) {
+                if (strtolower($key) == strtolower($attribute)) {
+                    $candidate = $key;
+                    break;
+                }
+            }
+        }
+
+        if ($candidate === null) {
+            return $default;
+        }
+
+        $value = $object->$candidate;
+        if (is_array($value)) {
+            return empty($value) ? $default : (string)$value[0];
+        }
+
+        return (string)$value;
+    }
+
+    private function getLdapAttributeValues($object, $attribute)
+    {
+        $attribute = trim((string)$attribute);
+        if ($attribute === '') {
+            return [];
+        }
+
+        if (strtolower($attribute) == 'dn') {
+            return property_exists($object, 'dn') && $object->dn !== '' ? [$object->dn] : [];
+        }
+
+        $candidate = null;
+        if (property_exists($object, $attribute)) {
+            $candidate = $attribute;
+        } elseif (property_exists($object, strtolower($attribute))) {
+            $candidate = strtolower($attribute);
+        } else {
+            foreach (get_object_vars($object) as $key => $value) {
+                if (strtolower($key) == strtolower($attribute)) {
+                    $candidate = $key;
+                    break;
+                }
+            }
+        }
+
+        if ($candidate === null) {
+            return [];
+        }
+
+        $value = $object->$candidate;
+        if (is_array($value)) {
+            $values = $value;
+        } else {
+            $values = [$value];
+        }
+
+        $values = array_map(function ($item) {
+            return trim((string)$item);
+        }, $values);
+
+        return array_values(array_filter($values, function ($item) {
+            return $item !== '';
+        }));
+    }
+
+    private function normalizeLdapMemberValue($value)
+    {
+        return strtolower(trim((string)$value));
+    }
+
+    private function configBool($value, $default = false)
+    {
+        if (is_bool($value)) {
+            return $value;
+        }
+
+        if (is_numeric($value)) {
+            return (int)$value === 1;
+        }
+
+        if (is_string($value)) {
+            $value = strtolower(trim($value));
+            if (in_array($value, ['true', '1', 'yes', 'on'], true)) {
+                return true;
+            }
+            if (in_array($value, ['false', '0', 'no', 'off', ''], true)) {
+                return false;
+            }
+        }
+
+        return $default;
+    }
+
+    private function buildLdapUserDetails($ldapUsers, $dataSource, $usernameAttribute)
+    {
+        $details = [];
+        foreach ($ldapUsers as $ldapUser) {
+            $username = $this->getLdapAttributeValue($ldapUser, $usernameAttribute);
+            if ($username === '') {
+                continue;
+            }
+
+            $realName = $this->getLdapAttributeValue($ldapUser, $dataSource['user_real_name_attribute']);
+            $displayName = $this->getLdapAttributeValue($ldapUser, $dataSource['user_display_name_attribute']);
+            $mail = $this->getLdapAttributeValue($ldapUser, $dataSource['user_mail_attribute']);
+            $externalId = $this->getLdapAttributeValue($ldapUser, $dataSource['user_external_id_attribute']);
+            $dn = $this->getLdapAttributeValue($ldapUser, $dataSource['user_dn_attribute'], $this->getLdapAttributeValue($ldapUser, 'dn'));
+
+            $details[$username] = [
+                'svn_user_name' => $username,
+                'svn_user_real_name' => $realName,
+                'svn_user_display_name' => $displayName !== '' ? $displayName : ($realName !== '' ? $realName : $username),
+                'svn_user_mail' => $mail,
+                'svn_user_external_id' => $externalId,
+                'svn_user_dn' => $dn,
+            ];
+        }
+
+        return $details;
+    }
+
+    private function buildLdapGroupDetails($ldapGroups, $dataSource, $groupNameAttribute)
+    {
+        $details = [];
+        foreach ($ldapGroups as $ldapGroup) {
+            $groupName = $this->getLdapAttributeValue($ldapGroup, $groupNameAttribute);
+            if ($groupName === '') {
+                continue;
+            }
+
+            $displayName = $this->getLdapAttributeValue($ldapGroup, $dataSource['group_display_name_attribute']);
+            $externalId = $this->getLdapAttributeValue($ldapGroup, $dataSource['group_external_id_attribute']);
+            $dn = $this->getLdapAttributeValue($ldapGroup, $dataSource['group_dn_attribute'], $this->getLdapAttributeValue($ldapGroup, 'dn'));
+
+            $details[$groupName] = [
+                'svn_group_name' => $groupName,
+                'svn_group_display_name' => $displayName !== '' ? $displayName : $groupName,
+                'svn_group_external_id' => $externalId,
+                'svn_group_dn' => $dn,
+            ];
+        }
+
+        return $details;
+    }
+
+    private function buildLdapMembershipIndex($users, $groups, $dataSource)
+    {
+        $userAttributes = $this->splitAttributes($dataSource['user_attributes']);
+        $groupAttributes = $this->splitAttributes($dataSource['group_attributes']);
+        $userNameAttribute = isset($userAttributes[0]) ? $userAttributes[0] : '';
+        $groupNameAttribute = isset($groupAttributes[0]) ? $groupAttributes[0] : '';
+        $userMemberAttribute = $dataSource['groups_to_user_attribute_value'];
+        $groupMemberAttribute = !empty($dataSource['group_dn_attribute'])
+            ? $dataSource['group_dn_attribute']
+            : $dataSource['groups_to_user_attribute_value'];
+        $groupMemberListAttribute = $dataSource['groups_to_user_attribute'];
+
+        $userByMemberValue = [];
+        foreach ($users as $user) {
+            $userName = $this->getLdapAttributeValue($user, $userNameAttribute);
+            if ($userName === '') {
+                continue;
+            }
+
+            $candidateValues = array_merge(
+                $this->getLdapAttributeValues($user, $userMemberAttribute),
+                $this->getLdapAttributeValues($user, 'dn'),
+                $this->getLdapAttributeValues($user, $userNameAttribute)
+            );
+
+            foreach ($candidateValues as $candidateValue) {
+                $userByMemberValue[$this->normalizeLdapMemberValue($candidateValue)] = $userName;
+            }
+        }
+
+        $groupByMemberValue = [];
+        $groupMembers = [];
+        $validGroupNames = [];
+        foreach ($groups as $group) {
+            $groupName = $this->getLdapAttributeValue($group, $groupNameAttribute);
+            if ($groupName === '') {
+                continue;
+            }
+
+            $checkResult = $this->checkService->CheckRepGroup($groupName);
+            if ($checkResult['status'] != 1) {
+                continue;
+            }
+
+            $validGroupNames[$groupName] = true;
+            $groupMembers[$groupName] = $this->getLdapAttributeValues($group, $groupMemberListAttribute);
+
+            $candidateValues = array_merge(
+                $this->getLdapAttributeValues($group, $groupMemberAttribute),
+                $this->getLdapAttributeValues($group, 'dn'),
+                $this->getLdapAttributeValues($group, $groupNameAttribute),
+                $this->getLdapAttributeValues($group, $dataSource['group_external_id_attribute'])
+            );
+
+            foreach ($candidateValues as $candidateValue) {
+                $groupByMemberValue[$this->normalizeLdapMemberValue($candidateValue)] = $groupName;
+            }
+        }
+
+        return [
+            'userByMemberValue' => $userByMemberValue,
+            'groupByMemberValue' => $groupByMemberValue,
+            'groupMembers' => $groupMembers,
+            'validGroupNames' => $validGroupNames,
+        ];
+    }
+
+    private function resolveLdapGroupUsers($groupName, $membershipIndex, $nestedEnabled, $maxDepth, $depth = 0, $path = [])
+    {
+        if (!isset($membershipIndex['groupMembers'][$groupName])) {
+            return [];
+        }
+
+        if (isset($path[$groupName]) || $depth > $maxDepth) {
+            return [];
+        }
+
+        $path[$groupName] = true;
+        $users = [];
+        foreach ($membershipIndex['groupMembers'][$groupName] as $memberValue) {
+            $memberKey = $this->normalizeLdapMemberValue($memberValue);
+
+            if (isset($membershipIndex['userByMemberValue'][$memberKey])) {
+                $users[] = $membershipIndex['userByMemberValue'][$memberKey];
+                continue;
+            }
+
+            if (!$nestedEnabled || !isset($membershipIndex['groupByMemberValue'][$memberKey])) {
+                continue;
+            }
+
+            $childGroupName = $membershipIndex['groupByMemberValue'][$memberKey];
+            $users = array_merge(
+                $users,
+                $this->resolveLdapGroupUsers($childGroupName, $membershipIndex, $nestedEnabled, $maxDepth, $depth + 1, $path)
+            );
+        }
+
+        return array_values(array_unique($users));
+    }
+
+    private function addAuthzGroupUser(&$authzContent, $groupName, $userName)
+    {
+        $checkResult = $this->checkService->CheckRepUser($userName);
+        if ($checkResult['status'] != 1) {
+            return message();
+        }
+
+        $result = $this->SVNAdmin->UpdGroupMember($authzContent, $groupName, $userName, 'user', 'add');
+        if (is_numeric($result)) {
+            if ($result == 612) {
+                return message(200, 0, '文件格式错误(不存在[groups]标识)');
+            } elseif ($result == 803) {
+                return message();
+            } else {
+                return message(200, 0, "错误码$result");
+            }
+        }
+
+        $authzContent = $result;
+        return message();
+    }
+
     /**
      * Searches for entries in the ldap.
      * 
@@ -282,7 +597,9 @@ class Ldap extends Base
             return message($checkResult['code'], $checkResult['status'], $checkResult['message'] . ': ' . $checkResult['data']['column']);
         }
 
-        $dataSource = $this->payload['data_source'];
+        $dataSource = $this->NormalizeDataSource([
+            'ldap' => $this->payload['data_source']
+        ], 'passwd')['ldap'];
 
         $type = $this->payload['type'];
         if (!in_array($type, ['connection', 'user', 'group'])) {
@@ -444,7 +761,7 @@ class Ldap extends Base
             return false;
         }
 
-        $attributes = explode(',', $dataSource['user_attributes']);
+        $attributes = $this->splitAttributes($dataSource['user_attributes']);
 
         $result = ldap_search($connection, $dataSource['user_base_dn'], sprintf('%s=%s', $attributes[0], $username));
 
@@ -489,12 +806,17 @@ class Ldap extends Base
         }
 
         // The standard attributes.
-        $attributes = explode(',', $dataSource['user_attributes']);
+        $attributes = $this->splitAttributes($dataSource['user_attributes']);
 
         // Include the attribute which is used in the "member" attribute of a group-entry.
         if (isset($dataSource['groups_to_user_attribute_value'])) {
-            $attributes[] = $dataSource['groups_to_user_attribute_value'];
+            $this->appendAttribute($attributes, $dataSource['groups_to_user_attribute_value']);
         }
+        $this->appendAttribute($attributes, $dataSource['user_real_name_attribute']);
+        $this->appendAttribute($attributes, $dataSource['user_display_name_attribute']);
+        $this->appendAttribute($attributes, $dataSource['user_mail_attribute']);
+        $this->appendAttribute($attributes, $dataSource['user_external_id_attribute']);
+        $this->appendAttribute($attributes, $dataSource['user_dn_attribute']);
 
         $ldapUsers = $this->objectSearch($connection, $dataSource['ldap_version'], $dataSource['user_base_dn'], $dataSource['user_search_filter'], $attributes);
 
@@ -503,15 +825,17 @@ class Ldap extends Base
         $up_name = $attributes[0];
         $users = [];
         for ($i = 0; $i < $ldapUsersLen; ++$i) {
-            if (!property_exists($ldapUsers[$i], $up_name)) {
+            $userName = $this->getLdapAttributeValue($ldapUsers[$i], $up_name);
+            if ($userName === '') {
                 continue;
             }
-            $users[] = $ldapUsers[$i]->$up_name;
+            $users[] = $userName;
         }
 
         return message(200, 1, '成功', [
             'object' => $ldapUsers,
-            'users' => $users
+            'users' => $users,
+            'userDetails' => $this->buildLdapUserDetails($ldapUsers, $dataSource, $up_name)
         ]);
     }
 
@@ -541,10 +865,13 @@ class Ldap extends Base
             return message(200, 0, sprintf('连接失败: %s', ldap_error($connection)));
         }
 
-        $attributes = explode(',', $dataSource['group_attributes']);
+        $attributes = $this->splitAttributes($dataSource['group_attributes']);
 
         if ($includeMembers) {
-            $attributes[] = $dataSource['groups_to_user_attribute'];
+            $this->appendAttribute($attributes, $dataSource['groups_to_user_attribute']);
+            $this->appendAttribute($attributes, $dataSource['group_display_name_attribute']);
+            $this->appendAttribute($attributes, $dataSource['group_external_id_attribute']);
+            $this->appendAttribute($attributes, $dataSource['group_dn_attribute']);
         }
 
         $ldapGroups = $this->objectSearch($connection, $dataSource['ldap_version'], $dataSource['group_base_dn'], $dataSource['group_search_filter'], $attributes);
@@ -554,15 +881,17 @@ class Ldap extends Base
         $group_name_property = $attributes[0];
         $groups = [];
         for ($i = 0; $i < $ldapGroupsLen; ++$i) {
-            if (!property_exists($ldapGroups[$i], $group_name_property)) {
+            $groupName = $this->getLdapAttributeValue($ldapGroups[$i], $group_name_property);
+            if ($groupName === '') {
                 continue;
             }
-            $groups[] = $ldapGroups[$i]->$group_name_property;
+            $groups[] = $groupName;
         }
 
         return message(200, 1, '成功', [
             'object' => $ldapGroups,
-            'groups' => $groups
+            'groups' => $groups,
+            'groupDetails' => $this->buildLdapGroupDetails($ldapGroups, $dataSource, $group_name_property)
         ]);
     }
 
@@ -581,6 +910,23 @@ class Ldap extends Base
         $dataSource = $dataSource['ldap'];
 
         $authzContent = $this->authzContent;
+        $manualGroups = [];
+        $dbManualGroups = $this->database->select('svn_groups', [
+            'svn_group_name'
+        ], [
+            'svn_group_source' => 'manual'
+        ]);
+        $dbManualGroupNames = array_column($dbManualGroups, 'svn_group_name');
+        if (!empty($dbManualGroupNames)) {
+            $oldGroupInfo = $this->SVNAdmin->GetGroupInfo($authzContent);
+            if (!is_numeric($oldGroupInfo)) {
+                foreach ($oldGroupInfo as $groupInfo) {
+                    if (in_array($groupInfo['groupName'], $dbManualGroupNames)) {
+                        $manualGroups[$groupInfo['groupName']] = $groupInfo;
+                    }
+                }
+            }
+        }
 
         //清空原有分组
         $authzContent = $this->SVNAdmin->ClearGroupSection($authzContent);
@@ -604,6 +950,47 @@ class Ldap extends Base
             return message($groups['code'], $groups['status'], $groups['message'], $groups['data']);
         }
         $groups = $groups['data']['object'];
+
+        $groupAttributes = $this->splitAttributes($dataSource['group_attributes']);
+        $groupNameAttribute = isset($groupAttributes[0]) ? $groupAttributes[0] : '';
+        $nestedEnabled = $this->configBool(isset($dataSource['group_nested_enabled']) ? $dataSource['group_nested_enabled'] : true, true);
+        $maxDepth = isset($dataSource['group_nested_max_depth']) ? (int)$dataSource['group_nested_max_depth'] : 10;
+        if ($maxDepth < 1) {
+            $maxDepth = 1;
+        } elseif ($maxDepth > 50) {
+            $maxDepth = 50;
+        }
+
+        $membershipIndex = $this->buildLdapMembershipIndex($users, $groups, $dataSource);
+        $groupDetails = $this->buildLdapGroupDetails($groups, $dataSource, $groupNameAttribute);
+        foreach ($groups as $g) {
+            $groupName = $this->getLdapAttributeValue($g, $groupNameAttribute);
+            if ($groupName === '' || !isset($membershipIndex['validGroupNames'][$groupName])) {
+                continue;
+            }
+
+            $result = $this->SVNAdmin->AddGroup($authzContent, $groupName);
+            if (is_numeric($result)) {
+                if ($result == 612) {
+                    return message(200, 0, '文件格式错误(不存在[groups]标识)');
+                } elseif ($result != 820) {
+                    return message(200, 0, "错误码$result");
+                }
+            } else {
+                $authzContent = $result;
+            }
+
+            $groupUsers = $this->resolveLdapGroupUsers($groupName, $membershipIndex, $nestedEnabled, $maxDepth);
+            foreach ($groupUsers as $userName) {
+                $result = $this->addAuthzGroupUser($authzContent, $groupName, $userName);
+                if ($result['status'] != 1) {
+                    return $result;
+                }
+            }
+        }
+
+        // Legacy direct-member block below is kept for compatibility but skipped after the indexed sync above.
+        $groups = [];
 
         //一个分组条目中表示分组名的属性
         $groups_attributes = explode(',', $dataSource['group_attributes']);
@@ -696,10 +1083,41 @@ class Ldap extends Base
             }
         }
 
-        file_put_contents($this->configSvn['svn_authz_file'], $authzContent);
+        foreach ($manualGroups as $manualGroupName => $manualGroup) {
+            $result = $this->SVNAdmin->AddGroup($authzContent, $manualGroupName);
+            if (!is_numeric($result)) {
+                $authzContent = $result;
+            } elseif ($result != 820) {
+                return message(200, 0, "閿欒鐮?result");
+            }
 
-        parent::RereadAuthz();
+            foreach ($manualGroup['include']['users']['list'] as $member) {
+                $result = $this->SVNAdmin->UpdGroupMember($authzContent, $manualGroupName, $member, 'user', 'add');
+                if (!is_numeric($result)) {
+                    $authzContent = $result;
+                }
+            }
+            foreach ($manualGroup['include']['groups']['list'] as $member) {
+                $result = $this->SVNAdmin->UpdGroupMember($authzContent, $manualGroupName, $member, 'group', 'add');
+                if (!is_numeric($result)) {
+                    $authzContent = $result;
+                }
+            }
+            foreach ($manualGroup['include']['aliases']['list'] as $member) {
+                $result = $this->SVNAdmin->UpdGroupMember($authzContent, $manualGroupName, $member, 'aliase', 'add');
+                if (!is_numeric($result)) {
+                    $authzContent = $result;
+                }
+            }
+        }
 
-        return message();
+        $writeResult = $this->WriteAuthzFile($authzContent);
+        if ($writeResult['status'] != 1) {
+            return $writeResult;
+        }
+
+        return message(200, 1, '成功', [
+            'groupDetails' => $groupDetails,
+        ]);
     }
 }

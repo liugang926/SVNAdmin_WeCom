@@ -132,7 +132,14 @@ class Svnuser extends Base
                 'svn_user_name' => $value,
                 'svn_user_pass' => $newCombin[$value]['userPass'],
                 'svn_user_status' => $newCombin[$value]['disabled'] == 1 ? 0 : 1,
-                'svn_user_note' => ''
+                'svn_user_note' => '',
+                'svn_user_real_name' => '',
+                'svn_user_display_name' => $value,
+                'svn_user_mail' => '',
+                'svn_user_external_id' => '',
+                'svn_user_dn' => '',
+                'svn_user_source' => 'passwd',
+                'svn_user_sync_time' => date('Y-m-d H:i:s')
             ]);
         }
 
@@ -146,6 +153,8 @@ class Svnuser extends Base
                 $this->database->update('svn_users', [
                     'svn_user_pass' => $newCombin[$value]['userPass'],
                     'svn_user_status' => $newCombin[$value]['disabled'] == 1 ? 0 : 1,
+                    'svn_user_source' => 'passwd',
+                    'svn_user_sync_time' => date('Y-m-d H:i:s'),
                 ], [
                     'svn_user_name' => $value
                 ]);
@@ -167,13 +176,16 @@ class Svnuser extends Base
             return message($ldapUsers['code'], $ldapUsers['status'], $ldapUsers['message'], $ldapUsers['data']);
         }
 
-        $ldapUsers = $ldapUsers['data']['users'];
+        $ldapUserData = $ldapUsers['data'];
+        $ldapUsers = $ldapUserData['users'];
+        $ldapUserDetails = isset($ldapUserData['userDetails']) && is_array($ldapUserData['userDetails']) ? $ldapUserData['userDetails'] : [];
 
         //检查用户名是否合法
         foreach ($ldapUsers as $key => $user) {
             $checkResult = $this->checkService->CheckRepUser($user);
             if ($checkResult['status'] != 1) {
                 unset($ldapUsers[$key]);
+                unset($ldapUserDetails[$user]);
             }
         }
 
@@ -223,11 +235,36 @@ class Svnuser extends Base
         //新增
         $create = array_diff($new, $old);
         foreach ($create as $value) {
+            $detail = isset($ldapUserDetails[$value]) ? $ldapUserDetails[$value] : [];
             $this->database->insert('svn_users', [
                 'svn_user_name' => $value,
                 'svn_user_pass' => '',
                 'svn_user_status' => 1,
-                'svn_user_note' => ''
+                'svn_user_note' => '',
+                'svn_user_real_name' => isset($detail['svn_user_real_name']) ? $detail['svn_user_real_name'] : '',
+                'svn_user_display_name' => isset($detail['svn_user_display_name']) && $detail['svn_user_display_name'] != '' ? $detail['svn_user_display_name'] : $value,
+                'svn_user_mail' => isset($detail['svn_user_mail']) ? $detail['svn_user_mail'] : '',
+                'svn_user_external_id' => isset($detail['svn_user_external_id']) ? $detail['svn_user_external_id'] : '',
+                'svn_user_dn' => isset($detail['svn_user_dn']) ? $detail['svn_user_dn'] : '',
+                'svn_user_source' => 'ldap',
+                'svn_user_sync_time' => date('Y-m-d H:i:s')
+            ]);
+        }
+
+        //鏇存柊 LDAP 鏄犲皠淇℃伅
+        $update = array_intersect($old, $new);
+        foreach ($update as $value) {
+            $detail = isset($ldapUserDetails[$value]) ? $ldapUserDetails[$value] : [];
+            $this->database->update('svn_users', [
+                'svn_user_real_name' => isset($detail['svn_user_real_name']) ? $detail['svn_user_real_name'] : '',
+                'svn_user_display_name' => isset($detail['svn_user_display_name']) && $detail['svn_user_display_name'] != '' ? $detail['svn_user_display_name'] : $value,
+                'svn_user_mail' => isset($detail['svn_user_mail']) ? $detail['svn_user_mail'] : '',
+                'svn_user_external_id' => isset($detail['svn_user_external_id']) ? $detail['svn_user_external_id'] : '',
+                'svn_user_dn' => isset($detail['svn_user_dn']) ? $detail['svn_user_dn'] : '',
+                'svn_user_source' => 'ldap',
+                'svn_user_sync_time' => date('Y-m-d H:i:s')
+            ], [
+                'svn_user_name' => $value
             ]);
         }
 
@@ -241,6 +278,11 @@ class Svnuser extends Base
      */
     private function SyncHttpPasswdToDb()
     {
+        $ensureResult = $this->EnsureHttpPasswdContainsPasswdUsers();
+        if ($ensureResult['status'] != 1) {
+            return $ensureResult;
+        }
+
         /**
          * 删除数据表重复插入的项
          */
@@ -298,7 +340,14 @@ class Svnuser extends Base
                 'svn_user_name' => $value,
                 'svn_user_pass' => '',
                 'svn_user_status' => $newCombin[$value]['disabled'] == 1 ? 0 : 1,
-                'svn_user_note' => ''
+                'svn_user_note' => '',
+                'svn_user_real_name' => '',
+                'svn_user_display_name' => $value,
+                'svn_user_mail' => '',
+                'svn_user_external_id' => '',
+                'svn_user_dn' => '',
+                'svn_user_source' => 'httpPasswd',
+                'svn_user_sync_time' => date('Y-m-d H:i:s')
             ]);
         }
 
@@ -308,6 +357,8 @@ class Svnuser extends Base
             if ($oldCombin[$value]['svn_user_status'] != ($newCombin[$value]['disabled'] == 1 ? 0 : 1)) {
                 $this->database->update('svn_users', [
                     'svn_user_status' => $newCombin[$value]['disabled'] == 1 ? 0 : 1,
+                    'svn_user_source' => 'httpPasswd',
+                    'svn_user_sync_time' => date('Y-m-d H:i:s'),
                 ], [
                     'svn_user_name' => $value
                 ]);
@@ -325,6 +376,143 @@ class Svnuser extends Base
      * 管理员
      * SVN用户
      */
+    private function EnsureHttpPasswdContainsPasswdUsers()
+    {
+        if ($this->enableCheckout != 'http') {
+            return message();
+        }
+
+        if ($this->httpDataSource['user_source'] == 'ldap') {
+            return message();
+        }
+
+        $passwdUsers = $this->SVNAdmin->GetUserInfo($this->passwdContent);
+        if (!is_array($passwdUsers) || count($passwdUsers) == 0) {
+            return message();
+        }
+
+        $httpUsers = $this->SVNAdmin->GetUserInfoHttp($this->httpPasswdContent);
+        if (!is_array($httpUsers)) {
+            return message();
+        }
+
+        $httpUserNames = array_column($httpUsers, 'userName');
+        $created = false;
+        foreach ($passwdUsers as $user) {
+            if (in_array($user['userName'], $httpUserNames)) {
+                continue;
+            }
+
+            $result = $this->ServiceApache->CreateUser($user['userName'], $user['userPass']);
+            if ($result['status'] != 1) {
+                return message($result['code'], $result['status'], $result['message'], $result['data']);
+            }
+            $created = true;
+        }
+
+        if ($created) {
+            $this->RereadHttpPasswd();
+        }
+
+        return message();
+    }
+
+    private function WarmUserDbIfNeeded()
+    {
+        if ($this->enableCheckout == 'svn') {
+            $dataSource = $this->svnDataSource;
+        } else {
+            $dataSource = $this->httpDataSource;
+        }
+
+        if ($dataSource['user_source'] == 'ldap') {
+            return message();
+        }
+
+        if ($this->enableCheckout == 'http') {
+            $ensureResult = $this->EnsureHttpPasswdContainsPasswdUsers();
+            if ($ensureResult['status'] != 1) {
+                return $ensureResult;
+            }
+        }
+
+        $sourceUsers = $this->enableCheckout == 'svn'
+            ? $this->SVNAdmin->GetUserInfo($this->passwdContent)
+            : $this->SVNAdmin->GetUserInfoHttp($this->httpPasswdContent);
+
+        if (!is_array($sourceUsers) || count($sourceUsers) == 0) {
+            return message();
+        }
+
+        $sourceUserNames = array_column($sourceUsers, 'userName');
+        sort($sourceUserNames);
+
+        $dbUserNames = $this->database->select('svn_users', 'svn_user_name');
+        sort($dbUserNames);
+
+        if ($sourceUserNames != $dbUserNames) {
+            return $this->SyncUser();
+        }
+
+        return message();
+    }
+
+    private function DeleteUserFromPasswd($userName, $isDisabledUser, $required = true)
+    {
+        $resultPasswd = $this->SVNAdmin->DelUserFromPasswd($this->passwdContent, $userName, $isDisabledUser);
+        if (is_numeric($resultPasswd) && $resultPasswd == 710) {
+            $retryPasswd = $this->SVNAdmin->DelUserFromPasswd($this->passwdContent, $userName, !$isDisabledUser);
+            if (!is_numeric($retryPasswd) || $retryPasswd != 710) {
+                $resultPasswd = $retryPasswd;
+            }
+        }
+
+        if (is_numeric($resultPasswd)) {
+            if ($resultPasswd == 710 && !$required) {
+                return message();
+            }
+            if ($resultPasswd == 621) {
+                return message(200, 0, '文件格式错误(不存在[users]标识)');
+            } elseif ($resultPasswd == 710) {
+                return message(200, 0, '用户不存在');
+            } else {
+                return message(200, 0, "错误码$resultPasswd");
+            }
+        }
+
+        funFilePutContents($this->configSvn['svn_passwd_file'], $resultPasswd);
+        $this->RereadPasswd();
+
+        return message();
+    }
+
+    private function DeleteUserFromHttpPasswd($userName, $isDisabledUser, $required = true)
+    {
+        $resultHttpPasswd = $this->SVNAdmin->DelUserFromHttpPasswd($this->httpPasswdContent, $userName, $isDisabledUser);
+        if (is_numeric($resultHttpPasswd) && $resultHttpPasswd == 710) {
+            $retryHttpPasswd = $this->SVNAdmin->DelUserFromHttpPasswd($this->httpPasswdContent, $userName, !$isDisabledUser);
+            if (!is_numeric($retryHttpPasswd) || $retryHttpPasswd != 710) {
+                $resultHttpPasswd = $retryHttpPasswd;
+            }
+        }
+
+        if (is_numeric($resultHttpPasswd)) {
+            if ($resultHttpPasswd == 710 && !$required) {
+                return message();
+            }
+            if ($resultHttpPasswd == 710) {
+                return message(200, 0, '用户不存在');
+            } else {
+                return message(200, 0, "错误码$resultHttpPasswd");
+            }
+        }
+
+        funFilePutContents($this->configSvn['http_passwd_file'], $resultHttpPasswd);
+        $this->RereadHttpPasswd();
+
+        return message();
+    }
+
     public function GetUserList()
     {
         //检查表单
@@ -343,7 +531,7 @@ class Svnuser extends Base
         }
 
         //检查排序字段
-        if (!in_array($this->payload['sortName'], ['svn_user_id', 'svn_user_name', 'svn_user_status', 'svn_user_last_login'])) {
+        if (!in_array($this->payload['sortName'], ['svn_user_id', 'svn_user_name', 'svn_user_real_name', 'svn_user_display_name', 'svn_user_mail', 'svn_user_source', 'svn_user_status', 'svn_user_last_login'])) {
             return message(2000, '不允许的排序字段');
         }
         if (!in_array($this->payload['sortType'], ['asc', 'desc', 'ASC', 'DESC'])) {
@@ -360,6 +548,11 @@ class Svnuser extends Base
             if ($syncResult['status'] != 1) {
                 return message($syncResult['code'], $syncResult['status'], $syncResult['message'], $syncResult['data']);
             }
+        } else {
+            $warmResult = $this->WarmUserDbIfNeeded();
+            if ($warmResult['status'] != 1) {
+                return message($warmResult['code'], $warmResult['status'], $warmResult['message'], $warmResult['data']);
+            }
         }
 
         if ($page) {
@@ -373,6 +566,13 @@ class Svnuser extends Base
             'svn_user_name',
             'svn_user_pass',
             'svn_user_status [Int]',
+            'svn_user_real_name',
+            'svn_user_display_name',
+            'svn_user_mail',
+            'svn_user_source',
+            'svn_user_external_id',
+            'svn_user_dn',
+            'svn_user_sync_time',
             'svn_user_note',
             'svn_user_last_login',
             'svn_user_token'
@@ -387,6 +587,9 @@ class Svnuser extends Base
             foreach ($result as $key => $value) {
                 if (
                     strstr($value['svn_user_name'], $searchKeyword) === false &&
+                    strstr($value['svn_user_real_name'], $searchKeyword) === false &&
+                    strstr($value['svn_user_display_name'], $searchKeyword) === false &&
+                    strstr($value['svn_user_mail'], $searchKeyword) === false &&
                     strstr($value['svn_user_note'], $searchKeyword) === false
                 ) {
                     unset($result[$key]);
@@ -430,6 +633,18 @@ class Svnuser extends Base
             // 确保所有字段都有默认值
             $result[$key]['svn_user_pass'] = $value['svn_user_pass'] ?? '';
             $result[$key]['svn_user_note'] = $value['svn_user_note'] ?? '';
+            $result[$key]['svn_user_real_name'] = $value['svn_user_real_name'] ?? '';
+            $result[$key]['svn_user_display_name'] = !empty($value['svn_user_display_name']) ? $value['svn_user_display_name'] : $value['svn_user_name'];
+            $result[$key]['svn_user_mail'] = $value['svn_user_mail'] ?? '';
+            $result[$key]['svn_user_source'] = $value['svn_user_source'] ?? 'manual';
+            $result[$key]['svn_user_external_id'] = $value['svn_user_external_id'] ?? '';
+            $result[$key]['svn_user_dn'] = $value['svn_user_dn'] ?? '';
+            $result[$key]['svn_user_sync_time'] = $value['svn_user_sync_time'] ?? '';
+            $labelName = $result[$key]['svn_user_display_name'];
+            if ($labelName == $value['svn_user_name'] && !empty($result[$key]['svn_user_real_name'])) {
+                $labelName = $result[$key]['svn_user_real_name'];
+            }
+            $result[$key]['svn_user_label'] = $labelName == $value['svn_user_name'] ? $value['svn_user_name'] : $labelName . ' (' . $value['svn_user_name'] . ')';
             $result[$key]['svn_user_last_login'] = $value['svn_user_last_login'] ?? '';
             $result[$key]['svn_user_status'] = $value['svn_user_status'] == 1 ? true : false;
             $result[$key]['online'] = (empty($value['svn_user_token']) || $value['svn_user_token'] == '-') ? false : (explode($this->configSign['signSeparator'], $value['svn_user_token'])[3] > $time);
@@ -591,7 +806,14 @@ class Svnuser extends Base
                     'svn_user_name' => $user['userName'],
                     'svn_user_pass' => $user['userPass'],
                     'svn_user_status' => $user['disabled'] == '1' ? 0 : 1,
-                    'svn_user_note' => ''
+                    'svn_user_note' => '',
+                    'svn_user_real_name' => '',
+                    'svn_user_display_name' => $user['userName'],
+                    'svn_user_mail' => '',
+                    'svn_user_external_id' => '',
+                    'svn_user_dn' => '',
+                    'svn_user_source' => 'passwd',
+                    'svn_user_sync_time' => date('Y-m-d H:i:s')
                 ]);
             }
 
@@ -670,7 +892,14 @@ class Svnuser extends Base
                     'svn_user_name' => $user['userName'],
                     'svn_user_pass' => '',
                     'svn_user_status' => $user['disabled'] == '1' ? 0 : 1,
-                    'svn_user_note' => ''
+                    'svn_user_note' => '',
+                    'svn_user_real_name' => '',
+                    'svn_user_display_name' => $user['userName'],
+                    'svn_user_mail' => '',
+                    'svn_user_external_id' => '',
+                    'svn_user_dn' => '',
+                    'svn_user_source' => 'httpPasswd',
+                    'svn_user_sync_time' => date('Y-m-d H:i:s')
                 ]);
             }
 
@@ -815,11 +1044,24 @@ class Svnuser extends Base
         $this->database->delete('svn_users', [
             'svn_user_name' => $this->payload['svn_user_name'],
         ]);
+        $realName = isset($this->payload['svn_user_real_name']) ? trim($this->payload['svn_user_real_name']) : '';
+        $displayName = isset($this->payload['svn_user_display_name']) ? trim($this->payload['svn_user_display_name']) : '';
+        $mail = isset($this->payload['svn_user_mail']) ? trim($this->payload['svn_user_mail']) : '';
+        if ($displayName == '') {
+            $displayName = $this->payload['svn_user_name'];
+        }
         $this->database->insert('svn_users', [
             'svn_user_name' => $this->payload['svn_user_name'],
             'svn_user_pass' => $this->payload['svn_user_pass'],
             'svn_user_status' => 1,
-            'svn_user_note' => $this->payload['svn_user_note']
+            'svn_user_note' => $this->payload['svn_user_note'],
+            'svn_user_real_name' => $realName,
+            'svn_user_display_name' => $displayName,
+            'svn_user_mail' => $mail,
+            'svn_user_external_id' => '',
+            'svn_user_dn' => '',
+            'svn_user_source' => $this->enableCheckout == 'svn' ? 'passwd' : 'httpPasswd',
+            'svn_user_sync_time' => date('Y-m-d H:i:s')
         ]);
 
         //日志
@@ -828,6 +1070,69 @@ class Svnuser extends Base
             sprintf("用户名:%s", $this->payload['svn_user_name']),
             $this->userName
         );
+
+        return message();
+    }
+
+    /**
+     * 修改SVN用户资料，可选修改密码
+     */
+    public function UpdUserInfo()
+    {
+        $user = $this->database->get('svn_users', [
+            'svn_user_name',
+            'svn_user_status [Int]',
+            'svn_user_source',
+        ], [
+            'svn_user_name' => $this->payload['svn_user_name']
+        ]);
+        if (empty($user)) {
+            return message(200, 0, '用户不存在');
+        }
+        if ($user['svn_user_source'] == 'ldap') {
+            return message(200, 0, 'LDAP用户资料由LDAP同步维护，请在LDAP侧修改后重新同步');
+        }
+
+        $realName = isset($this->payload['svn_user_real_name']) ? trim($this->payload['svn_user_real_name']) : '';
+        $displayName = isset($this->payload['svn_user_display_name']) ? trim($this->payload['svn_user_display_name']) : '';
+        $mail = isset($this->payload['svn_user_mail']) ? trim($this->payload['svn_user_mail']) : '';
+        if ($displayName == '') {
+            $displayName = $this->payload['svn_user_name'];
+        }
+
+        $updateData = [
+            'svn_user_real_name' => $realName,
+            'svn_user_display_name' => $displayName,
+            'svn_user_mail' => $mail,
+        ];
+
+        if (isset($this->payload['svn_user_pass']) && trim($this->payload['svn_user_pass']) != '') {
+            $svnUserStatus = isset($this->payload['svn_user_status']) ? $this->payload['svn_user_status'] : ($user['svn_user_status'] == 1);
+            if ($this->enableCheckout == 'svn') {
+                $result = $this->SVNAdmin->UpdUserPass($this->passwdContent, $this->payload['svn_user_name'], $this->payload['svn_user_pass'], !$svnUserStatus);
+                if (is_numeric($result)) {
+                    if ($result == 621) {
+                        return message(200, 0, '文件格式错误(不存在[users]标识)');
+                    } elseif ($result == 710) {
+                        return message(200, 0, '用户不存在 请管理员同步用户后重试');
+                    } else {
+                        return message(200, 0, "错误码$result");
+                    }
+                }
+
+                funFilePutContents($this->configSvn['svn_passwd_file'], $result);
+            } else {
+                $result = $this->ServiceApache->UpdUserPass($this->payload['svn_user_name'], $this->payload['svn_user_pass']);
+                if ($result['status'] != 1) {
+                    return message2($result);
+                }
+            }
+            $updateData['svn_user_pass'] = $this->payload['svn_user_pass'];
+        }
+
+        $this->database->update('svn_users', $updateData, [
+            'svn_user_name' => $this->payload['svn_user_name']
+        ]);
 
         return message();
     }
@@ -899,23 +1204,29 @@ class Svnuser extends Base
         }
 
         if ($this->enableCheckout == 'svn') {
-            //从passwd文件中全局删除
-            $resultPasswd = $this->SVNAdmin->DelUserFromPasswd($this->passwdContent, $this->payload['svn_user_name'], !$this->payload['svn_user_status']);
-            if (is_numeric($resultPasswd)) {
-                if ($resultPasswd == 621) {
-                    return message(200, 0, '文件格式错误(不存在[users]标识)');
-                } elseif ($resultPasswd == 710) {
-                    return message(200, 0, '用户不存在');
-                } else {
-                    return message(200, 0, "错误码$resultPasswd");
-                }
+            //从当前认证源删除，同时清理另一个本地认证源，避免切换协议或列表自检后账号回弹
+            $deleteResult = $this->DeleteUserFromPasswd($this->payload['svn_user_name'], !$this->payload['svn_user_status'], true);
+            if ($deleteResult['status'] != 1) {
+                return $deleteResult;
             }
 
-            funFilePutContents($this->configSvn['svn_passwd_file'], $resultPasswd);
+            if ($this->httpDataSource['user_source'] != 'ldap') {
+                $deleteResult = $this->DeleteUserFromHttpPasswd($this->payload['svn_user_name'], !$this->payload['svn_user_status'], false);
+                if ($deleteResult['status'] != 1) {
+                    return $deleteResult;
+                }
+            }
         } else {
-            $result = $this->ServiceApache->DelUser($this->payload['svn_user_name']);
-            if ($result['status'] != 1) {
-                return message2($result);
+            $deleteResult = $this->DeleteUserFromHttpPasswd($this->payload['svn_user_name'], !$this->payload['svn_user_status'], true);
+            if ($deleteResult['status'] != 1) {
+                return $deleteResult;
+            }
+
+            if ($this->svnDataSource['user_source'] != 'ldap') {
+                $deleteResult = $this->DeleteUserFromPasswd($this->payload['svn_user_name'], !$this->payload['svn_user_status'], false);
+                if ($deleteResult['status'] != 1) {
+                    return $deleteResult;
+                }
             }
         }
 
@@ -936,7 +1247,10 @@ class Svnuser extends Base
             'svn_user_name' => $this->payload['svn_user_name']
         ]);
 
-        funFilePutContents($this->configSvn['svn_authz_file'], $resultAuthz);
+        $writeResult = $this->WriteAuthzFile($resultAuthz);
+        if ($writeResult['status'] != 1) {
+            return $writeResult;
+        }
 
         //日志
         $this->ServiceLogs->InsertLog(

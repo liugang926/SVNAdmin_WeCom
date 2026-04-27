@@ -3,96 +3,58 @@
 </style>
 
 <template>
-  <div>
+  <div class="layout-base">
     <Layout>
-      <Header
-        style="
-          background-color: #9b1be5;
-          background-image: -webkit-linear-gradient(
-            0,
-            #9b1be5 0%,
-            #2085ea 100%
-          );
-          background-image: -o-linear-gradient(0, #9b1be5 0%, #2085ea 100%);
-          background-image: -moz-linear-gradient(0, #9b1be5 0%, #2085ea 100%);
-          background-image: linear-gradient(90deg, #9b1be5 0%, #2085ea 100%);
-          color: #fff;
-          position: fixed;
-          width: 100%;
-          z-index: 99;
-          align-items: center;
-          display: flex;
-          justify-content: flex-end;
-          line-height: 0px;
-        "
-      >
-        <img
-          :src="require('@/assets/images/logo.png')"
-          style="
-            line-height: 64px;
-            position: absolute;
-            top: 12px;
-            left: 1%;
-            cursor: pointer;
-          "
-          draggable="false"
-          @click="toMyIndex"
-        />
-        <!-- 实时任务 -->
-        <span
-          style="cursor: pointer"
-          @click="ModalTasks"
-          v-if="currentRoleId != 2"
-          >后台任务</span
-        >
-        <!-- 分割线 -->
-        <Divider type="vertical" v-if="currentRoleId != 2" />
-        <!-- 用户身份 -->
-        <a style="margin-left: 8px; color: #fff; cursor: default">{{
-          currentRoleName
-        }}</a>
-        <!-- 分割线 -->
-        <Divider type="vertical" />
-        <!-- 当前登录用户 -->
-        <Dropdown :transfer="true" trigger="click" @on-click="Logout">
-          <a href="javascript:void(0)" style="margin-left: 8px; color: #fff">
-            {{ currentUsername }}
-            <Icon type="md-arrow-dropdown" />
-          </a>
-          <DropdownMenu slot="list">
-            <DropdownItem>退出</DropdownItem>
-          </DropdownMenu>
-        </Dropdown>
-        <!-- 多语言切换 -->
-        <!-- <Dropdown trigger="click">
-          <a href="javascript:void(0)" style="margin-left: 8px; color: #fff">
-            语言
-            <Icon type="md-arrow-dropdown" />
-          </a>
-          <DropdownMenu slot="list">
-            <DropdownItem>中文简体</DropdownItem>
-          </DropdownMenu>
-          <DropdownMenu slot="list">
-            <DropdownItem>中文繁体</DropdownItem>
-          </DropdownMenu>
-          <DropdownMenu slot="list">
-            <DropdownItem>English</DropdownItem>
-          </DropdownMenu>
-        </Dropdown> -->
-        <!-- 分割线 -->
-        <!-- <Divider type="vertical" /> -->
+      <Header class="layout-header">
+        <div style="display: flex; align-items: center">
+          <img
+            :src="require('@/assets/images/logo.png')"
+            class="layout-logo"
+            draggable="false"
+            @click="toMyIndex"
+          />
+          <Divider type="vertical" style="margin: 0 20px; height: 24px" />
+          <Breadcrumb>
+            <BreadcrumbItem v-for="(item, index) in breadcrumb" :key="index">
+              {{ item.meta.title }}
+            </BreadcrumbItem>
+          </Breadcrumb>
+        </div>
+
+        <div style="display: flex; align-items: center">
+          <!-- 实时任务 -->
+          <div class="header-action-item" @click="ModalTasks" v-if="currentRoleId != 2">
+            <Icon type="md-list-box" size="18" style="margin-right: 4px" />
+            <span>后台任务</span>
+          </div>
+          
+          <Divider type="vertical" v-if="currentRoleId != 2" />
+
+          <!-- 用户身份 -->
+          <div class="header-action-item">
+            <Tag color="primary" ghost>{{ currentRoleName }}</Tag>
+          </div>
+
+          <Divider type="vertical" />
+
+          <!-- 当前登录用户 -->
+          <Dropdown :transfer="true" trigger="click" @on-click="Logout">
+            <div class="header-action-item">
+              <Avatar icon="ios-person" size="small" style="margin-right: 8px; background-color: #2d8cf0" />
+              <span>{{ currentUsername }}</span>
+              <Icon type="md-arrow-dropdown" />
+            </div>
+            <DropdownMenu slot="list">
+              <DropdownItem name="logout">
+                <Icon type="md-log-out" /> 退出登录
+              </DropdownItem>
+            </DropdownMenu>
+          </Dropdown>
+        </div>
       </Header>
-      <Layout style="margin-top: 64px">
-        <Sider
-          style="
-            min-height: calc(100vh - 64px);
-            position: fixed;
-            z-index: 99;
-            height: 0;
-            background: #ffffff;
-            overflow-y: auto;
-          "
-        >
+
+      <Layout>
+        <Sider class="layout-sider" width="200">
           <Menu
             theme="light"
             width="auto"
@@ -115,29 +77,39 @@
                   :count="itemItem.name == 'setting' && hasUpdate ? 1 : 0"
                   :offset="[0, -10]"
                 >
-                  <Icon :type="getMenuIcon(itemItem)" />
-                  {{ itemItem.meta.title }}
+                  <Icon :type="getMenuIcon(itemItem)" size="16" />
+                  <span style="margin-left: 8px">{{ itemItem.meta.title }}</span>
                 </Badge>
               </MenuItem>
             </MenuGroup>
           </Menu>
         </Sider>
-        <Layout
-          style="padding: 20px 30px 0px 220px; height: calc(100vh - 64px)"
-        >
-          <Breadcrumb style="padding: 0px 0px 20px 0px">
-            <BreadcrumbItem v-for="(item, index) in breadcrumb" :key="index">{{
-              item.meta.title
-            }}</BreadcrumbItem>
-          </Breadcrumb>
-          <Content>
+
+        <Content class="layout-content-wrapper">
+          <div class="layout-content-main">
             <router-view></router-view>
-          </Content>
-        </Layout>
+          </div>
+        </Content>
       </Layout>
     </Layout>
+
+    <!-- 全局后台任务悬浮球 -->
+    <div 
+      class="global-task-ball" 
+      :class="{ 'is-running': formTasks.task_running }"
+      v-if="currentRoleId != 2"
+      @click="ModalTasks"
+    >
+      <Tooltip content="点击查看后台任务" placement="left">
+        <div class="ball-inner">
+          <Icon type="md-sync" size="20" class="ball-icon" />
+          <Badge :count="formTasks.count" class="ball-badge" v-if="formTasks.count > 0" />
+        </div>
+      </Tooltip>
+    </div>
+
     <!-- 对话框-实时后台任务 -->
-    <Modal v-model="modalTasks" :draggable="true" title="实时后台任务">
+    <Modal v-model="modalTasks" :draggable="true" title="实时后台任务" width="700">
       <div style="height: 350px">
         <Tabs v-model="tabsTaskCurrent" @on-click="ClickTaskTab">
           <TabPane label="当前任务" icon="ios-loading" name="current">
@@ -425,16 +397,25 @@ export default {
     //是否有效
     //动态生成侧边导航
     CreateNav() {
+      var sessionRoute = {};
+      try {
+        sessionRoute = sessionStorage.route ? JSON.parse(sessionStorage.route) : {};
+      } catch (e) {
+        console.warn("Failed to parse route from sessionStorage:", e);
+      }
       //母版组件的子页面
-      var result = JSON.parse(sessionStorage.route).children;
+      var result = Array.isArray(sessionRoute.children) ? sessionRoute.children : [];
+      result = result
+        .map((item) => this.NormalizeNavRoute(item))
+        .filter((item) => item && item.meta && item.meta.group);
 
       //过滤出导航分组
       var arrGroupNav = this.UniqueObjectArray(
-        result.map((item) => item.meta.group).filter((item) => item.name != "")
+        result.map((item) => item.meta.group).filter((item) => item && item.name != "")
       );
 
       //过滤掉不需要展示的导航
-      result = result.filter((item) => item.meta.group.num > 0);
+      result = result.filter((item) => Number(item.meta.group.num) > 0);
 
       //转换为两层结构
       var navList = [];
@@ -454,6 +435,41 @@ export default {
         });
       }
       this.navList = navList;
+    },
+    NormalizeNavRoute(item) {
+      if (!item || !item.name) {
+        return null;
+      }
+      const defaults = this.GetDefaultNavMeta(item.name);
+      const route = Object.assign({}, defaults, item);
+      route.meta = Object.assign({}, defaults.meta || {}, item.meta || {});
+      if (!route.meta.group && defaults.meta && defaults.meta.group) {
+        route.meta.group = defaults.meta.group;
+      }
+      if (!route.meta.icon && defaults.meta && defaults.meta.icon) {
+        route.meta.icon = defaults.meta.icon;
+      }
+      if (!route.meta.title && defaults.meta && defaults.meta.title) {
+        route.meta.title = defaults.meta.title;
+      }
+      route.path = route.path || defaults.path;
+      return route;
+    },
+    GetDefaultNavMeta(name) {
+      const routeMap = {
+        index: { path: "/index", meta: { title: "信息统计", icon: "ios-stats", group: { name: "仓库", num: 1 } } },
+        repositoryInfo: { path: "/repositoryInfo", meta: { title: "SVN仓库", icon: "logo-buffer", group: { name: "仓库", num: 1 } } },
+        repositoryUser: { path: "/repositoryUser", meta: { title: "SVN用户", icon: "md-person", group: { name: "仓库", num: 1 } } },
+        repositoryGroup: { path: "/repositoryGroup", meta: { title: "SVN分组", icon: "md-people", group: { name: "仓库", num: 1 } } },
+        logs: { path: "/logs", meta: { title: "系统日志", icon: "md-bug", group: { name: "运维", num: 2 } } },
+        crond: { path: "/crond", meta: { title: "任务计划", icon: "ios-alarm", group: { name: "运维", num: 2 } } },
+        distribute: { path: "/distribute", meta: { title: "运维", icon: "ios-build", group: { name: "运维", num: 2 } } },
+        personal: { path: "/personal", meta: { title: "个人中心", icon: "md-cube", group: { name: "高级", num: 3 } } },
+        subadmin: { path: "/subadmin", meta: { title: "子管理员", icon: "md-hand", group: { name: "高级", num: 3 } } },
+        wecom: { path: "/wecom", meta: { title: "企业微信", icon: "ios-chatbubbles", group: { name: "高级", num: 3 } } },
+        setting: { path: "/setting", meta: { title: "系统配置", icon: "md-settings", group: { name: "高级", num: 3 } } },
+      };
+      return routeMap[name] || { path: "", meta: { title: name, icon: "ios-menu", group: { name: "其他", num: 9 } } };
     },
     //对象数组去重
     UniqueObjectArray(objectArray) {

@@ -8,126 +8,72 @@
         show-icon
         >{{ formStatusSubversion.info }}</Alert
       >
-      <Row style="margin-bottom: 15px">
-        <Col
-          type="flex"
-          justify="space-between"
-          :xs="21"
-          :sm="20"
-          :md="19"
-          :lg="18"
-        >
-          <Button
-            icon="md-add"
-            type="primary"
-            ghost
-            @click="ModalCreateRep"
-            v-if="user_role_id == 1 || user_role_id == 3"
-            >新建仓库</Button
-          >
-          <Tooltip
-            max-width="250"
-            content="该操作会扫描磁盘上的有效仓库列表"
-            placement="bottom"
-            :transfer="true"
-            v-if="user_role_id == 1 || user_role_id == 3"
-          >
+      <Row style="margin-bottom: 20px" type="flex" align="middle" :gutter="16">
+        <Col :flex="1">
+          <div class="action-bar">
+            <!-- 核心管理组 -->
+            <ButtonGroup class="mr-10">
+              <Button
+                icon="md-add"
+                type="primary"
+                @click="ModalCreateRep"
+                v-if="user_role_id == 1 || user_role_id == 3"
+                >新建仓库</Button
+              >
+            </ButtonGroup>
+
+            <!-- 同步更新组 -->
+            <ButtonGroup class="mr-10" v-if="user_role_id == 1 || user_role_id == 3">
+              <Tooltip max-width="250" content="仅扫描磁盘仓库列表" placement="bottom" :transfer="true">
+                <Button icon="ios-sync" @click="GetRepList(true, true, false, false)">同步列表</Button>
+              </Tooltip>
+              <Tooltip max-width="250" content="同步磁盘仓库列表及体积、版本信息（耗时）" placement="bottom" :transfer="true">
+                <Button icon="md-refresh-circle" @click="GetRepList(true, true, true, true)">全量同步</Button>
+              </Tooltip>
+            </ButtonGroup>
+
+            <!-- 维护组 -->
+            <ButtonGroup class="mr-10" v-if="user_role_id == 1 || user_role_id == 3">
+              <Tooltip content="检测 authz 配置文件合法性" placement="bottom" :transfer="true">
+                <Button icon="ios-hammer-outline" @click="CheckAuthz">Authz 检测</Button>
+              </Tooltip>
+            </ButtonGroup>
+
+            <!-- 用户端同步 -->
             <Button
-              icon="ios-sync"
-              type="warning"
-              ghost
-              @click="GetRepList(true, true, false, false)"
-              >同步仓库列表</Button
-            >
-          </Tooltip>
-          <Tooltip
-            max-width="250"
-            content="该操作会扫描磁盘上的有效仓库列表，并批量读取每个仓库的体积和版本信息，为耗时操作"
-            placement="bottom"
-            :transfer="true"
-            v-if="user_role_id == 1 || user_role_id == 3"
-          >
-            <Button
-              icon="ios-sync"
-              type="warning"
-              ghost
-              @click="GetRepList(true, true, true, true)"
-              >同步仓库信息</Button
-            >
-          </Tooltip>
-          <Tooltip
-            max-width="250"
-            content="同步才可获取最新权限列表"
-            placement="bottom"
-            :transfer="true"
-            v-if="user_role_id == 2"
-          >
-            <Button
+              v-if="user_role_id == 2"
               icon="ios-sync"
               type="warning"
               ghost
               @click="GetSvnUserRepList(true)"
               >同步列表</Button
             >
-          </Tooltip>
-          <Tooltip
-            max-width="450"
-            content="不经意的配置可能会导致 authz 配置文件失效
-如 svnserve 1.10 版本中为空分组授权仓库可能会导致配置失效等
-配置文件失效会导致用户端无法检出、浏览等正常操作
-因此可通过此工具在线检测 authz 配置文件有无问题
-此功能依赖 svnauthz-validate"
-            placement="bottom"
-            :transfer="true"
-            v-if="user_role_id == 1 || user_role_id == 3"
-          >
-            <Button
-              icon="ios-hammer-outline"
-              type="error"
-              ghost
-              @click="CheckAuthz"
-              >authz检测</Button
-            >
-          </Tooltip>
-          <!-- <Tooltip
-            max-width="250"
-            content="权限迁移"
-            placement="bottom"
-            :transfer="true"
-          >
-            <Button
-              icon="ios-swap"
-              type="error"
-              ghost
-              @click="GetRepList(true)"
-              v-if="user_role_id == 1 || user_role_id == 3"
-              >权限迁移</Button
-            >
-          </Tooltip> -->
+          </div>
         </Col>
-        <Col :xs="3" :sm="4" :md="5" :lg="6">
+        <Col span="6">
           <Input
             search
             enter-button
-            placeholder="通过SVN仓库名、备注搜索..."
+            placeholder="搜索仓库名、备注..."
             @on-search="GetRepList()"
             v-model="searchKeywordRep"
             v-if="user_role_id == 1 || user_role_id == 3"
+            class="search-input"
           />
           <Input
             search
             enter-button
-            placeholder="通过SVN仓库名搜索..."
+            placeholder="搜索仓库名..."
             @on-search="GetSvnUserRepList()"
             v-model="searchKeywordRep"
             v-if="user_role_id == 2"
+            class="search-input"
           />
         </Col>
       </Row>
       
       <!-- 管理人员仓库列表 -->
-      <div v-if="user_role_id == 1 || user_role_id == 3">
-
+      <div v-if="user_role_id == 1 || user_role_id == 3" class="table-container">
         <Table
           ref="repTable"
           @on-sort-change="SortChangeRep"
@@ -138,68 +84,82 @@
           border
           resizable
           size="small"
+          class="modern-table"
         >
         <template slot-scope="{ index }" slot="index">
-          {{ pageSizeRep * (pageCurrentRep - 1) + index + 1 }}
+          <span class="index-cell">{{ pageSizeRep * (pageCurrentRep - 1) + index + 1 }}</span>
         </template>
         <template slot-scope="{ row, index }" slot="rep_rev">
-          {{ row.rep_rev || '-'
-          }}<Icon
-            type="ios-refresh"
-            size="20"
-            style="float: right"
-            :color="row.loading_rep_rev ? '#ed4014' : '#808695'"
-            @click="SyncRepRev(row.rep_name, index)"
-          />
+          <div class="sync-cell">
+            <span class="value-text">{{ row.rep_rev || '-' }}</span>
+            <Icon
+              type="ios-refresh"
+              class="sync-btn"
+              :class="{ 'ani-rotate': row.loading_rep_rev }"
+              @click="SyncRepRev(row.rep_name, index)"
+            />
+          </div>
         </template>
         <template slot-scope="{ row, index }" slot="rep_size">
-          {{ row.rep_size || '-'
-          }}<Icon
-            type="ios-refresh"
-            size="20"
-            style="float: right"
-            :color="row.loading_rep_size ? '#ed4014' : '#808695'"
-            @click="SyncRepSize(row.rep_name, index)"
-          />
+          <div class="sync-cell">
+            <span class="value-text">{{ row.rep_size || '-' }}</span>
+            <Icon
+              type="ios-refresh"
+              class="sync-btn"
+              :class="{ 'ani-rotate': row.loading_rep_size }"
+              @click="SyncRepSize(row.rep_name, index)"
+            />
+          </div>
         </template>
         <template slot-scope="{ row, index }" slot="rep_note">
           <Input
-            :border="false"
+            ghost
+            class="note-input"
             v-model="tableDataRep[index].rep_note"
             @on-blur="UpdRepNote(index, row.rep_name)"
+            placeholder="点击添加备注..."
           />
         </template>
-        <template slot-scope="{ row }" slot="repScan">
-          <Button type="info" size="small" @click="ModalViewRep(row.rep_name)"
-            >浏览</Button
-          >
+        <template slot-scope="{ row }" slot="action_main">
+          <div class="repo-action-group">
+            <Button
+              size="small"
+              type="primary"
+              ghost
+              icon="ios-folder-open"
+              class="repo-action-button"
+              @click="ModalViewRep(row.rep_name)"
+              >浏览</Button
+            >
+            <Button
+              size="small"
+              type="info"
+              ghost
+              icon="md-key"
+              class="repo-action-button"
+              @click="ModalRepPri(row.rep_name)"
+              >权限</Button
+            >
+            <Button
+              size="small"
+              type="success"
+              ghost
+              icon="ios-git-branch"
+              class="repo-action-button"
+              @click="ModalRepHooks(row.rep_name)"
+              >钩子</Button
+            >
+          </div>
         </template>
-        <template slot-scope="{ row }" slot="repPri">
-          <Button type="info" size="small" @click="ModalRepPri(row.rep_name)"
-            >配置</Button
-          >
-        </template>
-        <template slot-scope="{ row }" slot="repHooks">
-          <Button type="info" size="small" @click="ModalRepHooks(row.rep_name)"
-            >编辑</Button
-          >
-        </template>
-        <template slot-scope="{ row }" slot="action">
-          <Button
-            type="success"
-            size="small"
-            @click="ModalRepAdvance(row.rep_name)"
-            >高级</Button
-          >
-          <Button
-            type="warning"
-            size="small"
-            @click="ModalEditRepName(row.rep_name)"
-            >修改</Button
-          >
-          <Button type="error" size="small" @click="DelRep(row.rep_name)"
-            >删除</Button
-          >
+        <template slot-scope="{ row }" slot="action_more">
+          <Dropdown trigger="click" transfer placement="bottom-end" @on-click="handleMoreAction($event, row.rep_name)">
+            <Button size="small" icon="ios-more" class="repo-more-button"></Button>
+            <DropdownMenu slot="list" class="repo-more-menu">
+              <DropdownItem name="advance"><Icon type="md-settings" /> 高级设置</DropdownItem>
+              <DropdownItem name="edit"><Icon type="md-create" /> 重命名</DropdownItem>
+              <DropdownItem name="delete" style="color: #ed4014"><Icon type="md-trash" /> 删除仓库</DropdownItem>
+            </DropdownMenu>
+          </Dropdown>
         </template>
         </Table>
       </div>
@@ -318,321 +278,141 @@
       </div>
     </Modal>
     <!-- 对话框-仓库浏览 -->
-    <Modal v-model="modalViewRep" fullscreen :title="titleModalViewRep">
-      <Row style="margin-bottom: 15px">
-        <Col span="15">
-          <Breadcrumb>
-            <BreadcrumbItem
-              v-for="(item, index) in breadRepPath.name"
-              :key="index"
-              @click.native="ClickBreadGetRepCon(breadRepPath.path[index])"
-              >{{ item }}</BreadcrumbItem
-            >
-          </Breadcrumb>
-        </Col>
-        <Col span="1"> </Col>
-        <Col span="8">
-          <Tooltip
-            style="width: 100%"
-            max-width="450"
-            :content="tempCheckout"
-            placement="bottom"
+    <Modal v-model="modalViewRep" fullscreen :title="titleModalViewRep" class-name="modern-browser-modal">
+      <div class="browser-container">
+        <!-- 顶栏：导航与快速操作 -->
+        <div class="browser-header">
+          <div class="nav-area">
+            <div class="path-nav">
+              <Breadcrumb separator="/" class="modern-breadcrumb">
+                <BreadcrumbItem
+                  v-for="(item, index) in breadRepPath.name"
+                  :key="index"
+                  @click.native="ClickBreadGetRepCon(breadRepPath.path[index])"
+                >
+                  <Icon :type="index === 0 ? 'md-cube' : 'ios-folder'" style="margin-right: 4px" />
+                  {{ item }}
+                </BreadcrumbItem>
+              </Breadcrumb>
+            </div>
+          </div>
+          <div class="action-area">
+            <div class="checkout-box">
+              <span class="checkout-label">检出地址:</span>
+              <Input readonly v-model="tempCheckout" size="small" class="checkout-input">
+                <Button slot="append" icon="md-copy" @click="CopyCheckout">复制地址</Button>
+              </Input>
+            </div>
+          </div>
+        </div>
+
+        <!-- 主体：文件列表 -->
+        <div class="browser-content">
+          <Table
+            height="calc(100vh - 160px)"
+            highlight-row
+            :no-data-text="noDataTextRepCon"
+            :border="false"
+            :loading="loadingRepCon"
+            :columns="tableColumnRepCon"
+            :data="tableDataRepCon"
+            @on-row-click="ClickRowGetRepCon"
+            class="browser-table"
           >
-            <Input readonly v-model="tempCheckout">
-              <Button slot="append" icon="md-copy" @click="CopyCheckout"
-                >复制</Button
-              >
-            </Input>
-          </Tooltip>
-        </Col>
-      </Row>
-      <Card :bordered="true" :dis-hover="true">
-        <Table
-          height="450"
-          highlight-row
-          :no-data-text="noDataTextRepCon"
-          :border="false"
-          :loading="loadingRepCon"
-          :show-header="false"
-          :columns="tableColumnRepCon"
-          :data="tableDataRepCon"
-          @on-row-click="ClickRowGetRepCon"
-        >
-          <template slot-scope="{ row }" slot="resourceType">
-            <Icon
-              v-if="row.resourceType == 1"
-              size="20"
-              type="ios-document-outline"
-            />
-            <Icon
-              v-if="row.resourceType == 2"
-              size="20"
-              color="#65a0d5"
-              type="ios-folder-open"
-            />
-          </template>
-        </Table>
-      </Card>
-      <div slot="footer">
-        <Button type="primary" ghost @click="modalViewRep = false">取消</Button>
+            <template slot-scope="{ row }" slot="resourceType">
+              <div class="file-icon-wrapper">
+                <Icon
+                  v-if="row.resourceType == 1"
+                  type="ios-document"
+                  size="24"
+                  class="icon-file"
+                />
+                <Icon
+                  v-if="row.resourceType == 2"
+                  type="ios-folder"
+                  size="24"
+                  class="icon-folder"
+                />
+              </div>
+            </template>
+            <template slot-scope="{ row }" slot="resourceName">
+              <div class="file-name-info">
+                <span class="name-text">{{ row.resourceName }}</span>
+              </div>
+            </template>
+            <template slot-scope="{ row }" slot="revInfo">
+              <div class="rev-cell">
+                <Tag size="small" color="blue" ghost>r{{ row.revNum }}</Tag>
+                <span class="rev-author">{{ row.revAuthor }}</span>
+              </div>
+            </template>
+          </Table>
+        </div>
       </div>
+      <div slot="footer" style="display:none"></div>
     </Modal>
+
     <!-- 对话框-仓库钩子 -->
     <Modal
       v-model="modalRepHooks"
       :title="titleModalRepHooks"
-      class-name="hooks"
-      :draggable="true"
+      class-name="modern-hooks-modal"
+      width="800"
     >
-      <Alert type="info" show-icon
-        >如果SVN客户端正在触发相关的钩子，则更新动作可能会持续阻塞或失败，直至客户端结束相关进程</Alert
-      >
-      <Tabs type="card">
-        <TabPane label="仓库钩子">
-          <Card :bordered="false" :dis-hover="true" class="my-modal">
-            <!-- <Scroll> -->
-            <List>
-              <Divider orientation="left" size="small">Commit</Divider>
-              <ListItem>
-                <ListItemMeta
-                  description="Start-commit hook"
-                  v-if="formRepHooks.start_commit.hasFile"
-                />
-                <ListItemMeta title="Start-commit hook" v-else />
-                <template slot="action">
-                  <li>
-                    <span @click="ModalStudyRepHook('start_commit')">介绍</span>
-                  </li>
-                  <li>
-                    <span @click="ModalEditRepHook('start_commit')">编辑</span>
-                  </li>
-                  <li>
-                    <span
-                      @click="DelRepHook(formRepHooks.start_commit.fileName)"
-                      >移除</span
-                    >
-                  </li>
-                </template>
-              </ListItem>
-              <ListItem>
-                <ListItemMeta
-                  description="Pre-commit hook"
-                  v-if="formRepHooks.pre_commit.hasFile"
-                />
-                <ListItemMeta title="Pre-commit hook" v-else />
-                <template slot="action">
-                  <li>
-                    <span @click="ModalStudyRepHook('pre_commit')">介绍</span>
-                  </li>
-                  <li>
-                    <span @click="ModalEditRepHook('pre_commit')">编辑</span>
-                  </li>
-                  <li>
-                    <span @click="DelRepHook(formRepHooks.pre_commit.fileName)"
-                      >移除</span
-                    >
-                  </li>
-                </template>
-              </ListItem>
-              <ListItem>
-                <ListItemMeta
-                  description="Post-commit hook"
-                  v-if="formRepHooks.post_commit.hasFile"
-                />
-                <ListItemMeta title="Post-commit hook" v-else />
-                <template slot="action">
-                  <li>
-                    <span @click="ModalStudyRepHook('post_commit')">介绍</span>
-                  </li>
-                  <li>
-                    <span @click="ModalEditRepHook('post_commit')">编辑</span>
-                  </li>
-                  <li>
-                    <span @click="DelRepHook(formRepHooks.post_commit.fileName)"
-                      >移除</span
-                    >
-                  </li>
-                </template>
-              </ListItem>
-              <Divider orientation="left" size="small">Locks</Divider>
-              <ListItem>
-                <ListItemMeta
-                  description="Pre-lock hook"
-                  v-if="formRepHooks.pre_lock.hasFile"
-                />
-                <ListItemMeta title="Pre-lock hook" v-else />
-                <template slot="action">
-                  <li>
-                    <span @click="ModalStudyRepHook('pre_lock')">介绍</span>
-                  </li>
-                  <li>
-                    <span @click="ModalEditRepHook('pre_lock')">编辑</span>
-                  </li>
-                  <li>
-                    <span @click="DelRepHook(formRepHooks.pre_lock.fileName)"
-                      >移除</span
-                    >
-                  </li>
-                </template>
-              </ListItem>
-              <ListItem>
-                <ListItemMeta
-                  description="Post-lock hook"
-                  v-if="formRepHooks.post_lock.hasFile"
-                />
-                <ListItemMeta title="Post-lock hook" v-else />
-                <template slot="action">
-                  <li>
-                    <span @click="ModalStudyRepHook('post_lock')">介绍</span>
-                  </li>
-                  <li>
-                    <span @click="ModalEditRepHook('post_lock')">编辑</span>
-                  </li>
-                  <li>
-                    <span @click="DelRepHook(formRepHooks.post_lock.fileName)"
-                      >移除</span
-                    >
-                  </li>
-                </template>
-              </ListItem>
-              <ListItem>
-                <ListItemMeta
-                  description="Pre-unlock hook"
-                  v-if="formRepHooks.pre_unlock.hasFile"
-                />
-                <ListItemMeta title="Pre-unlock hook" v-else />
-                <template slot="action">
-                  <li>
-                    <span @click="ModalStudyRepHook('pre_unlock')">介绍</span>
-                  </li>
-                  <li>
-                    <span @click="ModalEditRepHook('pre_unlock')">编辑</span>
-                  </li>
-                  <li>
-                    <span @click="DelRepHook(formRepHooks.pre_unlock.fileName)"
-                      >移除</span
-                    >
-                  </li>
-                </template>
-              </ListItem>
-              <ListItem>
-                <ListItemMeta
-                  description="Post-unlock hook"
-                  v-if="formRepHooks.post_unlock.hasFile"
-                />
-                <ListItemMeta title="Post-unlock hook" v-else />
-                <template slot="action">
-                  <li>
-                    <span @click="ModalStudyRepHook('post_unlock')">介绍</span>
-                  </li>
-                  <li>
-                    <span @click="ModalEditRepHook('post_unlock')">编辑</span>
-                  </li>
-                  <li>
-                    <span @click="DelRepHook(formRepHooks.post_unlock.fileName)"
-                      >移除</span
-                    >
-                  </li>
-                </template>
-              </ListItem>
-              <Divider orientation="left" size="small"
-                >Revision property change</Divider
-              >
-              <ListItem>
-                <ListItemMeta
-                  description="Pre-reversion property change hook"
-                  v-if="formRepHooks.pre_revprop_change.hasFile"
-                />
-                <ListItemMeta
-                  title="Pre-reversion property change hook"
-                  v-else
-                />
-                <template slot="action">
-                  <li>
-                    <span @click="ModalStudyRepHook('pre_revprop_change')"
-                      >介绍</span
-                    >
-                  </li>
-                  <li>
-                    <span @click="ModalEditRepHook('pre_revprop_change')"
-                      >编辑</span
-                    >
-                  </li>
-                  <li>
-                    <span
-                      @click="
-                        DelRepHook(formRepHooks.pre_revprop_change.fileName)
-                      "
-                      >移除</span
-                    >
-                  </li>
-                </template>
-              </ListItem>
-              <ListItem>
-                <ListItemMeta
-                  description="Post-reversion property change hook"
-                  v-if="formRepHooks.post_revprop_change.hasFile"
-                />
-                <ListItemMeta
-                  title="Post-reversion property change hook"
-                  v-else
-                />
-                <template slot="action">
-                  <li>
-                    <span @click="ModalStudyRepHook('post_revprop_change')"
-                      >介绍</span
-                    >
-                  </li>
-                  <li>
-                    <span @click="ModalEditRepHook('post_revprop_change')"
-                      >编辑</span
-                    >
-                  </li>
-                  <li>
-                    <span
-                      @click="
-                        DelRepHook(formRepHooks.post_revprop_change.fileName)
-                      "
-                      >移除</span
-                    >
-                  </li>
-                </template>
-              </ListItem>
-            </List>
-            <!-- </Scroll> -->
-          </Card>
-          <Spin size="large" fix v-if="loadingGetRepHooks"></Spin>
-        </TabPane>
-        <TabPane label="常用钩子">
-          <Alert
-            >如需将自己常用的钩子显示在此处<br /><br />
-            以新增 pre-commit 功能为例，操作步骤如下：<br /><br />
-            1、在 /home/svnadmin/hooks/ 目录下创建任意名称的文件夹<br />
-            2、创建文件 hookDescription 并写入此钩子的主要功能描述<br />
-            3、创建文件 hookName 并写入钩子的类型 pre-commit<br />
-            4、创建文件 pre-commit 并写入钩子内容<br />
-          </Alert>
-          <Scroll :height="200">
-            <List :border="true">
-              <ListItem v-for="(item, index) in recommendHooks" :key="index">
-                <ListItemMeta
-                  :title="item.hookName"
-                  :description="item.hookDescription"
-                />
-                <template slot="action">
-                  <li>
-                    <span @click="ViewRecommendHook(item.hookName)">查看</span>
-                  </li>
-                </template>
-              </ListItem>
-            </List>
-          </Scroll>
-        </TabPane>
-      </Tabs>
+      <div class="hooks-container">
+        <Alert show-icon type="warning" class="hooks-alert">
+          注意：如果 SVN 客户端正在触发钩子，更新可能会阻塞或失败，请确保操作时无活跃事务。
+        </Alert>
+        
+        <Tabs value="active">
+          <TabPane label="仓库活动钩子" name="active" icon="md-flash">
+            <div class="hooks-grid">
+              <template v-for="(hook, key) in formRepHooks">
+                <Card :key="key" class="hook-card" :dis-hover="true">
+                  <div class="hook-card-header">
+                    <div class="hook-status-info">
+                      <Badge :status="hook.hasFile ? 'success' : 'default'" class="status-dot" />
+                      <span class="hook-name">{{ key.replace('_', '-').toUpperCase() }}</span>
+                    </div>
+                    <div class="hook-actions">
+                      <Tooltip content="功能介绍" placement="top">
+                        <Button size="small" type="text" icon="md-help-circle" @click="ModalStudyRepHook(key)" />
+                      </Tooltip>
+                      <Tooltip content="编辑内容" placement="top">
+                        <Button size="small" type="primary" ghost icon="md-create" @click="ModalEditRepHook(key)" />
+                      </Tooltip>
+                      <Tooltip content="移除脚本" placement="top" v-if="hook.hasFile">
+                        <Button size="small" type="error" ghost icon="md-trash" @click="DelRepHook(hook.fileName)" />
+                      </Tooltip>
+                    </div>
+                  </div>
+                  <div class="hook-card-body">
+                    <p class="hook-desc">{{ hook.fileName || '未配置脚本' }}</p>
+                  </div>
+                </Card>
+              </template>
+            </div>
+            <Spin size="large" fix v-if="loadingGetRepHooks"></Spin>
+          </TabPane>
+          
+          <TabPane label="常用钩子模板" name="templates" icon="md-cube">
+            <div class="recommend-hooks-area">
+              <Scroll height="400">
+                <List border size="small">
+                  <ListItem v-for="(item, index) in recommendHooks" :key="index">
+                    <ListItemMeta :title="item.hookName" :description="item.hookDescription" />
+                    <template slot="action">
+                      <Button type="info" size="small" ghost @click="ViewRecommendHook(item.hookName)">查看代码</Button>
+                    </template>
+                  </ListItem>
+                </List>
+              </Scroll>
+            </div>
+          </TabPane>
+        </Tabs>
+      </div>
       <div slot="footer">
-        <Button type="primary" ghost @click="modalRepHooks = false"
-          >取消</Button
-        >
+        <Button type="primary" size="large" @click="modalRepHooks = false">完成</Button>
       </div>
     </Modal>
     <!-- 对话框-钩子信息介绍 -->
@@ -1205,7 +985,8 @@ export default {
           title: "序号",
           slot: "index",
           fixed: "left",
-          width: 80,
+          width: 70,
+          align: "center",
           resizable: false,
         },
         {
@@ -1213,11 +994,11 @@ export default {
           key: "rep_name",
           tooltip: true,
           sortable: "custom",
-          width: 150,
+          width: 160,
           resizable: true,
         },
         {
-          title: "版本数",
+          title: "版本",
           slot: "rep_rev",
           sortable: "custom",
           width: 100,
@@ -1227,39 +1008,28 @@ export default {
           title: "体积",
           slot: "rep_size",
           sortable: "custom",
-          width: 120,
+          width: 110,
           resizable: true,
         },
         {
           title: "备注信息",
           slot: "rep_note",
-          width: 300,
+          minWidth: 200,
           resizable: true,
         },
         {
-          title: "仓库内容",
-          slot: "repScan",
-          width: 120,
-          resizable: true,
-        },
-        {
-          title: "仓库权限",
-          slot: "repPri",
-          width: 120,
-          resizable: true,
-        },
-        {
-          title: "仓库钩子",
-          slot: "repHooks",
-          width: 120,
-          resizable: true,
-        },
-        {
-          title: "其它",
-          slot: "action",
-          width: 180,
+          title: "核心操作",
+          slot: "action_main",
+          width: 250,
+          align: "center",
           resizable: false,
-          // fixed:"right"
+        },
+        {
+          title: "更多",
+          slot: "action_more",
+          width: 70,
+          align: "center",
+          resizable: false,
         },
       ],
       tableDataRep: [],
@@ -1307,38 +1077,34 @@ export default {
         {
           title: "类型",
           slot: "resourceType",
-          width: 60,
+          width: 70,
+          align: 'center'
         },
         {
-          title: "文件",
-          key: "resourceName",
-          tooltip: true,
+          title: "名称",
+          slot: "resourceName",
+          minWidth: 200,
+        },
+        {
+          title: "版本/作者",
+          slot: "revInfo",
+          width: 180,
         },
         {
           title: "体积",
           key: "fileSize",
-          tooltip: true,
+          width: 100,
         },
         {
-          title: "作者",
-          key: "revAuthor",
-          tooltip: true,
-        },
-        {
-          title: "版本",
-          key: "revNum",
-          tooltip: true,
-        },
-        {
-          title: "日期",
+          title: "最后修改日期",
           key: "revTime",
-          tooltip: true,
-          width: 350,
+          width: 180,
         },
         {
-          title: "日志",
+          title: "提交日志",
           key: "revLog",
           tooltip: true,
+          minWidth: 150,
         },
       ],
       tableDataRepCon: [],
@@ -1483,6 +1249,24 @@ export default {
       }
       widths[columnKey] = width;
       localStorage.setItem('svn_repository_column_widths', JSON.stringify(widths));
+    },
+    handleMoreAction(action, repName) {
+      if (!action || !repName) {
+        return;
+      }
+      switch (action) {
+        case "advance":
+          this.ModalRepAdvance(repName);
+          break;
+        case "edit":
+          this.ModalEditRepName(repName);
+          break;
+        case "delete":
+          this.DelRep(repName);
+          break;
+        default:
+          break;
+      }
     },
 
     /**
@@ -2882,18 +2666,279 @@ export default {
 </script>
 
 <style lang="less" scoped>
-.table-info {
-  color: #666;
-  font-size: 14px;
+.action-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
-// 表格工具栏样式
-/deep/ .table-toolbar {
-  .toolbar-left {
-    .table-info {
-      margin-right: 16px;
+.mr-10 {
+  margin-right: 0;
+}
+
+.search-input {
+  /deep/ .ivu-input {
+    border-radius: 6px 0 0 6px;
+  }
+}
+
+.table-container {
+  margin-top: 10px;
+}
+
+.modern-table /deep/ .ivu-table-cell {
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.modern-table /deep/ th {
+  height: 40px;
+}
+
+.modern-table /deep/ td {
+  height: 48px;
+}
+
+.repo-action-group {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  gap: 6px;
+  min-width: 216px;
+  width: 100%;
+}
+
+.repo-action-button {
+  flex: 0 0 68px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 68px;
+  height: 28px;
+  line-height: 26px;
+  padding: 0;
+  white-space: nowrap;
+  border-radius: 4px;
+}
+
+.repo-action-button /deep/ span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.repo-action-button /deep/ .ivu-icon {
+  margin-right: 3px;
+}
+
+.repo-more-button {
+  width: 30px;
+  padding: 0;
+}
+
+.repo-more-menu /deep/ .ivu-dropdown-item {
+  min-width: 112px;
+}
+
+/* 现代化表格内部单元格 */
+.index-cell {
+  color: var(--text-light);
+  font-weight: 500;
+}
+
+.sync-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  .value-text {
+    color: var(--text-main);
+    font-family: monospace;
+  }
+  .sync-btn {
+    font-size: 18px;
+    color: var(--text-light);
+    cursor: pointer;
+    transition: all 0.3s;
+    &:hover {
+      color: var(--primary-color);
     }
   }
+}
+
+.ani-rotate {
+  animation: ani-rotate 1.5s linear infinite;
+  color: var(--primary-color) !important;
+}
+
+@keyframes ani-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.note-input {
+  width: 100%;
+  /deep/ .ivu-input {
+    background: transparent;
+    border: 1px transparent dashed;
+    transition: all 0.2s;
+    &:hover, &:focus {
+      background: #fff;
+      border-color: var(--border-color);
+    }
+  }
+}
+
+/* 现代化浏览器样式 */
+.modern-browser-modal /deep/ .ivu-modal-body {
+  padding: 0;
+  background-color: #fff;
+}
+
+.browser-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.browser-header {
+  padding: 12px 24px;
+  background: var(--primary-light);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modern-breadcrumb {
+  background: #fff;
+  padding: 4px 16px;
+  border-radius: 20px;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-light);
+}
+
+.checkout-box {
+  display: flex;
+  align-items: center;
+  background: #fff;
+  padding: 4px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-light);
+}
+
+.checkout-label {
+  font-size: 12px;
+  color: var(--text-light);
+  margin-right: 8px;
+  font-weight: 600;
+}
+
+.checkout-input {
+  width: 400px;
+  /deep/ .ivu-input {
+    border: none;
+    background: transparent;
+    font-family: monospace;
+    font-size: 13px;
+    color: var(--primary-color);
+  }
+}
+
+.browser-table /deep/ .ivu-table-row {
+  cursor: pointer;
+  &:hover td {
+    background-color: var(--primary-light) !important;
+  }
+}
+
+.file-icon-wrapper {
+  display: flex;
+  justify-content: center;
+}
+
+.icon-file { color: var(--text-light); }
+.icon-folder { color: var(--primary-color); }
+
+.file-name-info {
+  font-weight: 500;
+  color: var(--text-main);
+}
+
+.rev-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  .rev-author {
+    color: var(--text-sub);
+    font-size: 12px;
+  }
+}
+
+/* 现代化钩子编辑器样式 */
+.modern-hooks-modal /deep/ .ivu-modal-body {
+  background-color: var(--content-bg);
+}
+
+.hooks-container {
+  padding: 10px 0;
+}
+
+.hooks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 16px;
+  padding: 16px 4px;
+}
+
+.hook-card {
+  border: 1px solid var(--border-color);
+  background: #fff;
+  
+  &:hover {
+    border-color: var(--primary-color);
+    transform: translateY(-2px);
+  }
+}
+
+.hook-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.hook-status-info {
+  display: flex;
+  align-items: center;
+}
+
+.hook-name {
+  font-weight: 700;
+  color: var(--text-main);
+  font-size: 13px;
+  margin-left: 8px;
+}
+
+.hook-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.hook-card-body {
+  background: var(--content-bg);
+  padding: 10px 12px;
+  border-radius: 6px;
+}
+
+.hook-desc {
+  font-family: "Fira Code", monospace;
+  font-size: 11px;
+  color: var(--text-sub);
 }
 </style>
 

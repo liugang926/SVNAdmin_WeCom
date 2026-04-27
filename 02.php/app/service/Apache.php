@@ -13,6 +13,19 @@ use app\service\Svn as ServiceSvn;
 
 class Apache extends Base
 {
+    private function EnsureHttpPasswdTrailingNewline()
+    {
+        $file = $this->configSvn['http_passwd_file'];
+        if (!file_exists($file)) {
+            return;
+        }
+
+        $content = file_get_contents($file);
+        if ($content !== '' && substr($content, -1) !== "\n") {
+            funFilePutContents($file, rtrim($content, "\r\n") . "\n");
+        }
+    }
+
     /**
      * 其它服务层对象
      *
@@ -270,6 +283,8 @@ class Apache extends Base
      */
     public function CreateUser($username, $password)
     {
+        $this->EnsureHttpPasswdTrailingNewline();
+
         $result = funShellExec(
             sprintf(
                 "'%s' -b '%s' '%s' '%s'",
@@ -443,7 +458,7 @@ class Apache extends Base
             return message($checkResult['code'], $checkResult['status'], $checkResult['message'] . ': ' . $checkResult['data']['column']);
         }
 
-        $dataSource = $this->payload['data_source'];
+        $dataSource = $this->NormalizeDataSource($this->payload['data_source'], 'httpPasswd');
 
         if ($dataSource['user_source'] == 'ldap') {
 

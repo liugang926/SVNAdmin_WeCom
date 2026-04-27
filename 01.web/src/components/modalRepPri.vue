@@ -42,20 +42,36 @@
             :dis-hover="true"
             style="height: 500px; margin-top: 18px"
           >
-            <Button
-              icon="md-add"
-              type="primary"
-              ghost
-              @click="modalSvnObject = true"
-              >路径授权</Button
-            >
+            <Row :gutter="12" type="flex" align="middle">
+              <Col span="10">
+                <Button
+                  icon="md-add"
+                  type="primary"
+                  ghost
+                  @click="modalSvnObject = true"
+                  >路径授权</Button
+                >
+              </Col>
+              <Col span="14">
+                <Input
+                  search
+                  clearable
+                  v-model="searchKeywordRepPathPri"
+                  placeholder="通过对象名称、姓名、显示名、邮箱搜索..."
+                  @on-change="GetRepPathAllPri"
+                />
+              </Col>
+            </Row>
             <Table
               border
-              :height="410"
+              ref="repPathPriTable"
+              :height="390"
               size="small"
               :loading="loadingRepPathAllPri"
               :columns="tableColumnRepPathAllPri"
               :data="tableDataRepPathAllPri"
+              @on-column-width-resize="onColumnWidthResize"
+              resizable
               style="margin-top: 20px"
             >
               <template slot-scope="{ row }" slot="objectType">
@@ -157,6 +173,9 @@
       :propChangeParentModalObject="CloseModalObject"
       :propSendParentObject="CreateRepPathPri"
       :propSvnnUserPriPathId="svnn_user_pri_path_id"
+      :propShowSvnUserTab="true"
+      :propShowSvnGroupTab="true"
+      :propShowSvnAliaseTab="true"
       :propShowSvnAllTab="showModalSvnObjectTab"
       :propShowSvnAuthenticatedTab="showModalSvnObjectTab"
       :propShowSvnAnonymousTab="showModalSvnObjectTab"
@@ -194,7 +213,6 @@ import ModalSvnObject from "./modalSvnObject.vue";
 
 export default {
   props: {
-    //父组件控制子组件显示
     propModalRepPri: {
       type: Boolean,
       default: false,
@@ -207,289 +225,173 @@ export default {
       type: String,
       default: "",
     },
-    propTitleModalRepPri: {
-      type: String,
-      default: "",
-    },
     propSvnnUserPriPathId: {
       type: Number,
       default: -1,
     },
-    //向父组件发送对话框状态变量
     propChangeParentModalVisible: {
       type: Function,
+      default: function () {},
     },
-    //向父组件发送仓库路径
     propChangeParentCurrentRepPath: {
       type: Function,
+      default: function () {},
     },
   },
   data() {
     return {
-      //临时
-      contextData: null,
-      //新建文件夹名称
       folderName: "",
-
-      /**
-       * 对话框
-       */
-      //仓库权限对话框
       modalRepPri: this.propModalRepPri,
-      //SVN对象列表组件
       modalSvnObject: false,
-      //创建文件夹
       modalCreateRepFolder: false,
-
-      /**
-       * 组件
-       */
       showModalSvnObjectTab:
-        sessionStorage.user_role_id == 1 || sessionStorage.user_role_id == 3
-          ? true
-          : false,
-
-      /**
-       * 加载
-       */
-      //仓库目录树
-      loadingRepTree: true,
-      //某个仓库路径的所有对象的权限列表
-      loadingRepPathAllPri: true,
-      //新建文件夹
+        sessionStorage.user_role_id == 1 || sessionStorage.user_role_id == 3,
+      loadingRepTree: false,
+      loadingRepPathAllPri: false,
       loadingCreateRepFolder: false,
-
-      /**
-       * 临时变量
-       */
-      //当前仓库路径
-      currentRepPath: this.propCurrentRepPath,
-      //当前仓库名称
+      currentRepPath: this.propCurrentRepPath || "/",
       currentRepName: this.propCurrentRepName,
-      //当前权限路径id
       svnn_user_pri_path_id: this.propSvnnUserPriPathId,
-
-      /**
-       * 对话框标题
-       */
-      //配置仓库权限
+      searchKeywordRepPathPri: "",
       titleModalRepPri: "仓库权限",
-
-      /**
-       * 表格
-       */
-      //仓库目录树
+      tableColumnStorageKey: "svn_rep_path_pri_column_widths",
       dataTreeRep: [],
-      //某节点的权限信息
       tableDataRepPathAllPri: [],
       tableColumnRepPathAllPri: [
         {
           title: "授权类型",
           slot: "objectType",
           width: 125,
+          minWidth: 110,
+          resizable: true,
         },
         {
           title: "对象名称",
-          key: "objectName",
+          key: "objectLabel",
           tooltip: true,
-          width: 115,
+          width: 160,
+          minWidth: 120,
+          resizable: true,
         },
         {
           title: "读写权限",
           slot: "objectPri",
-          width: 200,
+          width: 220,
+          minWidth: 180,
+          resizable: true,
         },
         {
           slot: "invert",
-          width: 100,
-          renderHeader(h, params) {
-            return h(
-              "tooltip",
-              {
-                props: {
-                  transfer: true,
-                  placement: "left",
-                  "max-width": "400",
-                },
-              },
-              [
-                h("span", [
-                  h("span", "权限反转"),
-                  h("Icon", {
-                    props: {
-                      type: "ios-help-circle-outline",
-                      size: "15",
-                    },
-                    class: { iconClass: true },
-                  }),
-                ]),
-                h(
-                  "div",
-                  {
-                    slot: "content",
-                    style: {
-                      fontSize: "10px",
-                    },
-                  },
-                  [
-                    h(
-                      "p",
-                      {
-                        style: {
-                          color: "#479af1",
-                          fontSize: "15px",
-                        },
-                      },
-                      "不熟练的用户请慎用此功能！"
-                    ),
-                    h("p", " "),
-                    h("p", "从 Subversion 1.5 开始"),
-                    h("p", "$authenticated 表示所有已认证的用户"),
-                    h("p", "$anonymous 表示所有未认证的用户"),
-                    h(
-                      "p",
-                      "~ 即权限反转表示排除某些用户 如在用户名、别名、用户组、认证类别前加上 ~ 表示将访问权限授予给与规则不匹配的用户"
-                    ),
-                    h("p", " "),
-                    h("p", "如："),
-                    h("p", "[calendar:/projects/calendar]"),
-                    h("p", "$anonymous = r"),
-                    h("p", "$authenticated = rw"),
-                    h("p", " "),
-                    h(
-                      "p",
-                      "虽然下面的配置容易让人产生困惑,，但它和上面的例子是等效的："
-                    ),
-                    h("p", " "),
-                    h("p", "[calendar:/projects/calendar]"),
-                    h("p", "~$authenticated = r"),
-                    h("p", "~$anonymous = rw"),
-                    h("p", " "),
-                    h("p", "下面是一个更恰当的使用 ~ 的例子："),
-                    h("p", " "),
-                    h("p", "[groups]"),
-                    h("p", "# calc 项目的开发人员信息"),
-                    h("p", "calc-developers = &harry, &sally, &joe"),
-                    h("p", " "),
-                    h("p", "# calc 项目的管理人员信息"),
-                    h("p", "calc-owners = &hewlett, &packard"),
-                    h("p", " "),
-                    h("p", "# calc 项目的所有参与人信息"),
-                    h("p", "calc = @calc-developers, @calc-owners"),
-                    h("p", " "),
-                    h("p", "# 所有的 calc 项目参与成员有该项目的读权限"),
-                    h("p", "[calc:/projects/calc]"),
-                    h("p", "@calc = rw"),
-                    h("p", " "),
-                    h("p", "# 只有项目管理员有 calc 项目的发行版标签操作权限"),
-                    h("p", "[calc:/projects/calc/tags]"),
-                    h("p", "~@calc-owners = r"),
-                  ]
-                ),
-              ]
-            );
+          width: 130,
+          minWidth: 110,
+          resizable: true,
+          renderHeader: function (h) {
+            return h("span", "权限反转");
           },
         },
-        {
-          title: "操作",
-          slot: "action",
-        },
+        { title: "操作", slot: "action", width: 100, resizable: false },
       ],
     };
   },
   components: {
     ModalSvnObject,
   },
-  computed: {},
-  created() {},
-  mounted() {},
-  watch: {
-    //监控有序
-    //仓库路径
-    propCurrentRepPath: function (value) {
-      this.currentRepPath = value;
+  computed: {
+    pathChunks() {
+      return this.currentRepPath.split("/").filter(Boolean);
     },
-    //仓库名称
+  },
+  watch: {
+    propCurrentRepPath: function (value) {
+      this.currentRepPath = value || "/";
+    },
     propCurrentRepName: function (value) {
       this.currentRepName = value;
     },
-    //SVN用户权限路径id
     propSvnnUserPriPathId: function (value) {
       this.svnn_user_pri_path_id = value;
     },
-    //对话框状态
     propModalRepPri: function (value) {
-      var that = this;
-      that.modalRepPri = value;
+      this.modalRepPri = value;
       if (value) {
-        //标题
-        that.titleModalRepPri = "仓库权限 - " + that.currentRepName;
-        //显示加载动画
-        that.loadingRepTree = true;
-        //清空数据
-        that.dataTreeRep = [];
-        if (
-          sessionStorage.user_role_id == 1 ||
-          sessionStorage.user_role_id == 3
-        ) {
-          //请求目录树
-          that.GetRepTree().then(function (response) {
-            that.loadingRepTree = false;
-            var result = response.data;
-            if (result.status == 1) {
-              that.dataTreeRep = result.data;
-            } else {
-              that.$Message.error({ content: result.message, duration: 2 });
-            }
-          });
-        } else if (sessionStorage.user_role_id == 2) {
-          //请求目录树
-          that.GetRepTree2(true).then(function (response) {
-            that.loadingRepTree = false;
-            var result = response.data;
-            if (result.status == 1) {
-              that.dataTreeRep = result.data;
-            } else {
-              that.$Message.error({ content: result.message, duration: 2 });
-            }
-          });
-        } else {
-          return;
-        }
-        //获取仓库根路径的所有对象的权限列表
-        that.GetRepPathAllPri();
+        this.OpenModalRepPri();
       }
     },
   },
+  mounted() {
+    this.loadColumnWidths();
+  },
   methods: {
-    /**
-     * ModalSvnObject 子组件传递变量给父组件
-     */
+    onColumnWidthResize(newWidth, oldWidth, column) {
+      this.saveColumnWidth(column.key || column.slot, newWidth);
+    },
+    loadColumnWidths() {
+      const savedWidths = localStorage.getItem(this.tableColumnStorageKey);
+      if (!savedWidths) {
+        return;
+      }
+      try {
+        const widths = JSON.parse(savedWidths);
+        this.tableColumnRepPathAllPri.forEach((column) => {
+          const key = column.key || column.slot;
+          if (widths[key] && column.resizable !== false) {
+            this.$set(column, "width", widths[key]);
+          }
+        });
+      } catch (e) {
+        console.warn("Failed to load permission table column widths:", e);
+      }
+    },
+    saveColumnWidth(columnKey, width) {
+      if (!columnKey) {
+        return;
+      }
+      let widths = {};
+      const savedWidths = localStorage.getItem(this.tableColumnStorageKey);
+      if (savedWidths) {
+        try {
+          widths = JSON.parse(savedWidths);
+        } catch (e) {
+          console.warn("Failed to parse permission table column widths:", e);
+        }
+      }
+      widths[columnKey] = width;
+      localStorage.setItem(this.tableColumnStorageKey, JSON.stringify(widths));
+    },
+    getObjectTypeText(type) {
+      const map = {
+        'user': '用户',
+        'group': '分组',
+        'aliase': '别名',
+        '*': '所有人',
+        '$authenticated': '已认证用户',
+        '$anonymous': '匿名用户'
+      };
+      return map[type] || type;
+    },
+    OpenModalRepPri() {
+      this.currentRepPath = this.propCurrentRepPath || "/";
+      this.currentRepName = this.propCurrentRepName;
+      this.svnn_user_pri_path_id = this.propSvnnUserPriPathId;
+      this.titleModalRepPri = "仓库权限 - " + this.currentRepName;
+      this.dataTreeRep = [];
+      this.LoadRepTree(true);
+      this.GetRepPathAllPri();
+    },
     CloseModalObject() {
       this.modalSvnObject = false;
     },
-    /**
-     * 本组件 关闭对话框触发事件
-     */
     CloseModalRepPri() {
-      //本组件内对话框状态
       this.modalRepPri = false;
-      //将对话框状态从本组件内传递给父组件
       this.propChangeParentModalVisible();
     },
-    /**
-     * 本组件 Modal右上角叉号触发父组件修改变量状态
-     */
     ChangeModalVisible(value) {
       if (!value) {
-        //本组件对话框右上角的叉号被触发也会将对话框关闭状态从本组件内传递给父组件
         this.propChangeParentModalVisible();
       }
     },
-    /**
-     * 渲染目录树 给文件夹和文件设置对应的图标
-     */
-    renderContent(h, { root, node, data }) {
+    renderContent(h, options) {
+      const data = options.data;
       return h("span", [
         h("Icon", {
           props: {
@@ -498,21 +400,53 @@ export default {
                 ? "ios-document-outline"
                 : "ios-folder-open",
           },
-          style: {
-            marginRight: "8px",
-          },
+          style: { marginRight: "8px" },
         }),
         h("span", data.title),
       ]);
     },
-    //目录树右键
-    handleContextMenu(data, event, position) {
+    handleContextMenu(data) {
       this.ChangeSelectTreeNode([], data);
     },
+    LoadRepTree(first) {
+      const that = this;
+      that.loadingRepTree = true;
+      const request =
+        sessionStorage.user_role_id == 2
+          ? that.GetRepTree2(first)
+          : that.GetRepTree();
+      request
+        .then(function (response) {
+          that.loadingRepTree = false;
+          const result = response.data;
+          if (result.status == 1) {
+            that.dataTreeRep = that.NormalizeTreeData(result.data);
+          } else {
+            that.$Message.error({ content: result.message, duration: 2 });
+          }
+        })
+        .catch(function (error) {
+          that.loadingRepTree = false;
+          console.log(error);
+          that.$Message.error("出错了 请联系管理员！");
+        });
+    },
+    NormalizeTreeData(data) {
+      if (data && data.length > 0) {
+        return data;
+      }
+      return [
+        {
+          resourceType: 2,
+          title: this.currentRepName + "/",
+          fullPath: "/",
+        },
+      ];
+    },
     CreateRepFolder() {
-      var that = this;
+      const that = this;
       that.loadingCreateRepFolder = true;
-      var data = {
+      const data = {
         rep_name: that.currentRepName,
         path: that.currentRepPath,
         folder_name: that.folderName,
@@ -521,11 +455,12 @@ export default {
         .post("api.php?c=Svnrep&a=CreateRepFolder&t=web", data)
         .then(function (response) {
           that.loadingCreateRepFolder = false;
-          var result = response.data;
+          const result = response.data;
           if (result.status == 1) {
             that.$Message.success(result.message);
-            //重新请求目录树 todo
             that.modalCreateRepFolder = false;
+            that.folderName = "";
+            that.LoadRepTree(false);
           } else {
             that.$Message.error({ content: result.message, duration: 2 });
           }
@@ -536,154 +471,72 @@ export default {
           that.$Message.error("出错了 请联系管理员！");
         });
     },
-    /**
-     * 创建目录
-     */
-    CreateFolder() {},
-    /**
-     * 管理员获取目录树
-     */
     GetRepTree() {
-      var that = this;
-      var data = {
-        rep_name: that.currentRepName,
-        path: that.currentRepPath,
-      };
-      return new Promise(function (resolve, reject) {
-        that.$axios
-          .post("api.php?c=Svnrep&a=GetRepTree&t=web", data)
-          .then(function (response) {
-            resolve(response);
-          })
-          .catch(function (error) {
-            console.log(error);
-            that.$Message.error("出错了 请联系管理员！");
-            reject(error);
-          });
+      return this.$axios.post("api.php?c=Svnrep&a=GetRepTree&t=web", {
+        rep_name: this.currentRepName,
+        path: this.currentRepPath,
       });
     },
-    /**
-     * SVN用户获取目录树
-     */
-    GetRepTree2(first = false) {
-      var that = this;
-      var data = {
-        rep_name: that.currentRepName,
-        path: that.currentRepPath,
+    GetRepTree2(first) {
+      return this.$axios.post("api.php?c=Svnrep&a=GetRepTree2&t=web", {
+        rep_name: this.currentRepName,
+        path: this.currentRepPath,
         first: first,
-      };
-      return new Promise(function (resolve, reject) {
-        that.$axios
-          .post("api.php?c=Svnrep&a=GetRepTree2&t=web", data)
-          .then(function (response) {
-            resolve(response);
-          })
-          .catch(function (error) {
-            console.log(error);
-            that.$Message.error("出错了 请联系管理员！");
-            reject(error);
-          });
       });
     },
-    /**
-     * 目录树展开触发
-     * 异步加载目录下的内容
-     */
     ExpandRepTree(item, callback) {
-      var that = this;
-      var data = [];
+      const that = this;
       that.currentRepPath = item.fullPath;
       that.propChangeParentCurrentRepPath(item.fullPath);
       that.GetRepPathAllPri();
-      if (
-        sessionStorage.user_role_id == 1 ||
-        sessionStorage.user_role_id == 3
-      ) {
-        that.GetRepTree().then(function (response) {
-          var result = response.data;
+      const request =
+        sessionStorage.user_role_id == 2
+          ? that.GetRepTree2(false)
+          : that.GetRepTree();
+      request
+        .then(function (response) {
+          const result = response.data;
           if (result.status == 1) {
-            data = result.data;
-            if (data.length > 0) {
-              if (data[0].fullPath != "/") {
-                callback(data);
-              } else {
-                callback([]);
-                //根目录下没有内容时 直接覆盖掉
-                that.dataTreeRep = [
-                  {
-                    resourceType: 2,
-                    title: that.currentRepName + "/",
-                    fullPath: "/",
-                  },
-                ];
-              }
+            const data = result.data || [];
+            if (data.length > 0 && data[0].fullPath != "/") {
+              callback(data);
             } else {
               callback([]);
             }
           } else {
             that.$Message.error({ content: result.message, duration: 2 });
-            callback(data);
+            callback([]);
           }
+        })
+        .catch(function (error) {
+          console.log(error);
+          that.$Message.error("出错了 请联系管理员！");
+          callback([]);
         });
-      } else if (sessionStorage.user_role_id == 2) {
-        that.GetRepTree2().then(function (response) {
-          var result = response.data;
-          if (result.status == 1) {
-            data = result.data;
-            if (data.length > 0) {
-              if (data[0].fullPath != "/") {
-                callback(data);
-              } else {
-                callback([]);
-                //根目录下没有内容时 直接覆盖掉
-                that.dataTreeRep = [
-                  {
-                    resourceType: 2,
-                    title: that.currentRepName + "/",
-                    fullPath: "/",
-                  },
-                ];
-              }
-            } else {
-              callback([]);
-            }
-          } else {
-            that.$Message.error({ content: result.message, duration: 2 });
-            callback(data);
-          }
-        });
-      } else {
+    },
+    ChangeSelectTreeNode(selectArray, currentItem) {
+      if (!currentItem || !currentItem.fullPath) {
         return;
       }
-    },
-    /**
-     * 点击目录树节点触发
-     * 获取节点的权限
-     */
-    ChangeSelectTreeNode(selectArray, currentItem) {
       this.currentRepPath = currentItem.fullPath;
       this.propChangeParentCurrentRepPath(currentItem.fullPath);
       this.GetRepPathAllPri();
     },
-    /**
-     * 获取某个仓库路径的所有对象的权限列表
-     */
     GetRepPathAllPri() {
-      var that = this;
-      //清空上次表格数据
+      const that = this;
       that.tableDataRepPathAllPri = [];
-      //开始加载动画
       that.loadingRepPathAllPri = true;
-      var data = {
+      const data = {
         rep_name: that.currentRepName,
         path: that.currentRepPath,
+        searchKeyword: that.searchKeywordRepPathPri,
         svnn_user_pri_path_id: that.svnn_user_pri_path_id,
       };
       that.$axios
         .post("api.php?c=Svnrep&a=GetRepPathAllPri&t=web", data)
         .then(function (response) {
           that.loadingRepPathAllPri = false;
-          var result = response.data;
+          const result = response.data;
           if (result.status == 1) {
             that.tableDataRepPathAllPri = result.data;
           } else {
@@ -696,12 +549,9 @@ export default {
           that.$Message.error("出错了 请联系管理员！");
         });
     },
-    /**
-     * 为某仓库路径下增加权限
-     */
     CreateRepPathPri(objectType, objectName) {
-      var that = this;
-      var data = {
+      const that = this;
+      const data = {
         rep_name: that.currentRepName,
         path: that.currentRepPath,
         objectType: objectType,
@@ -712,9 +562,8 @@ export default {
       that.$axios
         .post("api.php?c=Svnrep&a=CreateRepPathPri&t=web", data)
         .then(function (response) {
-          var result = response.data;
+          const result = response.data;
           if (result.status == 1) {
-            // that.modalSvnObject = false;
             that.$Message.success(result.message);
             that.GetRepPathAllPri();
           } else {
@@ -722,17 +571,13 @@ export default {
           }
         })
         .catch(function (error) {
-          // that.modalSvnObject = false;
           console.log(error);
           that.$Message.error("出错了 请联系管理员！");
         });
     },
-    /**
-     * 修改某个仓库下的权限
-     */
     ClickRepPathPri(objectType, invert, objectName, objectPri) {
-      var that = this;
-      var data = {
+      const that = this;
+      const data = {
         rep_name: that.currentRepName,
         path: that.currentRepPath,
         objectType: objectType,
@@ -744,7 +589,7 @@ export default {
       that.$axios
         .post("api.php?c=Svnrep&a=UpdRepPathPri&t=web", data)
         .then(function (response) {
-          var result = response.data;
+          const result = response.data;
           if (result.status == 1) {
             that.$Message.success(result.message);
             that.GetRepPathAllPri();
@@ -757,12 +602,9 @@ export default {
           that.$Message.error("出错了 请联系管理员！");
         });
     },
-    /**
-     * 删除某个仓库下的权限
-     */
     DelRepPathPri(objectType, objectName) {
-      var that = this;
-      var data = {
+      const that = this;
+      const data = {
         rep_name: that.currentRepName,
         path: that.currentRepPath,
         objectType: objectType,
@@ -772,7 +614,7 @@ export default {
       that.$axios
         .post("api.php?c=Svnrep&a=DelRepPathPri&t=web", data)
         .then(function (response) {
-          var result = response.data;
+          const result = response.data;
           if (result.status == 1) {
             that.$Message.success(result.message);
             that.GetRepPathAllPri();
@@ -789,5 +631,155 @@ export default {
 };
 </script>
 
-<style>
+<style scoped>
+.modern-permission-modal /deep/ .ivu-modal-body {
+  padding: 0;
+  background-color: #f5f7f9;
+}
+
+.permission-layout {
+  display: flex;
+  height: calc(100vh - 100px);
+}
+
+.permission-sider {
+  width: 320px;
+  background: #fff;
+  border-right: 1px solid #dcdee2;
+  display: flex;
+  flex-direction: column;
+}
+
+.sider-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid #f0f0f0;
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+  color: #17233d;
+}
+
+.sider-title {
+  margin-left: 8px;
+}
+
+.sider-body {
+  padding: 16px;
+  flex: 1;
+}
+
+.permission-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.main-header {
+  padding: 16px 24px;
+  background: #fff;
+  border-bottom: 1px solid #dcdee2;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.path-display {
+  display: flex;
+  align-items: center;
+}
+
+.path-label {
+  color: #808695;
+  margin-right: 12px;
+  font-size: 13px;
+}
+
+.modern-breadcrumb {
+  background: #f8f9fb;
+  padding: 4px 12px;
+  border-radius: 4px;
+  border: 1px solid #e8eaec;
+}
+
+.main-body {
+  padding: 24px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.matrix-table {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.05);
+}
+
+.object-info {
+  display: flex;
+  align-items: center;
+}
+
+.object-text {
+  margin-left: 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.object-name {
+  font-weight: 600;
+  color: #17233d;
+}
+
+.object-tag {
+  font-size: 11px;
+  color: #808695;
+}
+
+.pri-btn {
+  width: 60px;
+  text-align: center;
+}
+
+.pri-btn.rw.ivu-radio-wrapper-checked {
+  background-color: #19be6b !important;
+  border-color: #19be6b !important;
+  color: #fff !important;
+}
+
+.pri-btn.r.ivu-radio-wrapper-checked {
+  background-color: #2db7f5 !important;
+  border-color: #2db7f5 !important;
+  color: #fff !important;
+}
+
+.pri-btn.no.ivu-radio-wrapper-checked {
+  background-color: #ed4014 !important;
+  border-color: #ed4014 !important;
+  color: #fff !important;
+}
+
+.invert-action {
+  display: flex;
+  align-items: center;
+}
+
+.invert-label {
+  margin-left: 8px;
+  font-size: 12px;
+  color: #ed4014;
+}
+
+.modern-tree /deep/ .ivu-tree-title {
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.modern-tree /deep/ .ivu-tree-title:hover {
+  background-color: #e8f4ff;
+}
+
+.modern-tree /deep/ .ivu-tree-title-selected {
+  background-color: #2d8cf0 !important;
+  color: #fff !important;
+}
 </style>

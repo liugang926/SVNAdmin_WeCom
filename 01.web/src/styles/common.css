@@ -1,0 +1,147 @@
+/* 设计系统变量 - 现代化升级 */
+:root {
+  /* 基础品牌色 */
+  --primary-color: #2d8cf0;
+  --primary-light: #f0f7ff;
+  --primary-100: #e8f4ff;
+  
+  /* 功能语义色 */
+  --success-color: #19be6b;
+  --warning-color: #ff9900;
+  --error-color: #ed4014;
+  --info-color: #2db7f5;
+
+  /* 中性背景色 */
+  --header-bg: #ffffff;
+  --sider-bg: #ffffff;
+  --content-bg: #f8f9fa;
+  
+  /* 文字分级 */
+  --text-main: #1c1f23;    /* 标题与正文 */
+  --text-sub: #5e6678;     /* 次要信息 */
+  --text-light: #86909c;   /* 辅助说明 */
+  
+  /* 边框与阴影 */
+  --border-color: #e5e6eb;
+  --shadow-base: 0 1px 2px 0 rgba(0, 0, 0, 0.03), 0 1px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px 0 rgba(0, 0, 0, 0.02);
+  --shadow-card: 0 4px 10px rgba(0, 0, 0, 0.05);
+  --border-radius: 8px;
+}
+
+body {
+  background-color: var(--content-bg);
+  color: var(--text-main);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Card 组件重塑 */
+.ivu-card {
+  border-radius: var(--border-radius);
+  border: 1px solid var(--border-color);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: var(--shadow-base);
+}
+
+.ivu-card-head {
+  border-bottom: 1px solid var(--border-color);
+  padding: 14px 20px;
+}
+
+.ivu-card-head p, .ivu-card-head-title {
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.ivu-card:hover {
+  box-shadow: var(--shadow-card);
+}
+
+/* Table 组件专业化 */
+.ivu-table-wrapper {
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  overflow: hidden;
+}
+
+.ivu-table {
+  color: var(--text-sub);
+}
+
+.ivu-table th {
+  background-color: #f7f8fa;
+  color: var(--text-main);
+  font-weight: 600;
+  height: 44px;
+}
+
+.ivu-table-border td, .ivu-table-border th {
+  border-right: none; /* 去掉垂直边框，减少视觉干扰 */
+}
+
+/* 按钮样式微调 */
+.ivu-btn {
+  border-radius: 6px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.ivu-btn-primary {
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.045);
+}
+
+/* 统一样式类 */
+.text-primary { color: var(--primary-color); }
+.text-success { color: var(--success-color); }
+.text-warning { color: var(--warning-color); }
+.text-error { color: var(--error-color); }
+
+/* 全局编程式弹窗美化 ($Modal.confirm / $Message) */
+.ivu-modal-confirm {
+  padding: 12px !important;
+}
+
+.ivu-modal-confirm-head {
+  padding: 16px 0 8px 0 !important;
+  display: flex;
+  align-items: center;
+}
+
+.ivu-modal-confirm-head-icon {
+  font-size: 28px !important;
+  top: 0 !important;
+  margin-right: 12px;
+}
+
+.ivu-modal-confirm-head-title {
+  font-size: 16px !important;
+  color: var(--text-main) !important;
+  font-weight: 600 !important;
+  line-height: 24px !important;
+}
+
+.ivu-modal-confirm-body {
+  padding-left: 40px !important; /* 图标对齐间距 */
+  font-size: 14px !important;
+  color: var(--text-sub) !important;
+  margin-top: 8px !important;
+}
+
+.ivu-modal-confirm-footer {
+  margin-top: 24px !important;
+  padding-bottom: 8px !important;
+}
+
+.ivu-modal-confirm-footer .ivu-btn {
+  padding: 6px 20px;
+  border-radius: var(--border-radius);
+  font-weight: 500;
+}
+
+/* 消息通知全局样式优化 */
+.ivu-message-notice-content {
+  padding: 10px 20px !important;
+  border-radius: 20px !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
+  background: #fff !important;
+}

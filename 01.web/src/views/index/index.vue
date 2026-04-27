@@ -1,215 +1,242 @@
 <template>
-  <div>
+  <div class="dashboard-container">
+    <!-- 系统负载与状态 -->
     <Card
       :bordered="false"
       :dis-hover="true"
-      style="margin-bottom: 10px"
+      class="status-group-card"
       v-if="display.part1"
     >
-      <p slot="title">
-        <Icon type="md-bulb" />
+      <div slot="title" class="card-header-slot">
+        <Icon type="md-pulse" class="header-icon" />
+        <span class="header-title">系统实时状态</span>
         <Tooltip
           max-width="500"
           placement="bottom"
           :transfer="true"
           :content="systemBrif.os"
+          class="header-os-info"
         >
-          <span
-            style="
-              white-space: nowrap;
-              overflow: hidden;
-              text-overflow: ellipsis;
-              width: 450px;
-              display: inline-block;
-            "
-          >
-            {{ systemBrif.os }}
-          </span>
+          <Tag color="primary" ghost size="small">{{ systemBrif.os }}</Tag>
         </Tooltip>
-      </p>
-      <div>
-        <Row>
-          <Col span="4">
-            <div class="statusTop">负载状态</div>
-            <Tooltip placement="bottom" max-width="200">
-              <Circle
-                :percent="statusInfo.load.percent"
-                dashboard
-                :size="100"
-                :stroke-color="statusInfo.load.color"
-                class="statusCircle"
-              >
-                <span class="demo-circle-inner" style="font-size: 24px"
-                  >{{ statusInfo.load.percent }}%</span
-                >
-              </Circle>
-              <div slot="content" style="font-size:11px">
-                <p>最近1分钟平均负载：{{ statusInfo.load.cpuLoad1Min }}</p>
-                <p>最近5分钟平均负载：{{ statusInfo.load.cpuLoad5Min }}</p>
-                <p>最近15分钟平均负载：{{ statusInfo.load.cpuLoad15Min }}</p>
-              </div>
-            </Tooltip>
-            <div class="statusBottom">{{ statusInfo.load.title }}</div>
-          </Col>
-          <Col span="4">
-            <div class="statusTop">CPU使用率</div>
-            <Tooltip placement="bottom" max-width="200">
-              <Circle
-                :percent="statusInfo.cpu.percent"
-                dashboard
-                :size="100"
-                :stroke-color="statusInfo.cpu.color"
-                class="statusCircle"
-              >
-                <span class="demo-circle-inner" style="font-size: 24px"
-                  >{{ statusInfo.cpu.percent }}%</span
-                >
-              </Circle>
-              <div slot="content" style="font-size:11px">
-                <p v-for="item in statusInfo.cpu.cpu" :key="item">{{ item }}</p>
-                <p>{{ statusInfo.cpu.cpuPhysical }}个物理CPU</p>
-                <p>{{ statusInfo.cpu.cpuCore }}个物理核心</p>
-                <p>{{ statusInfo.cpu.cpuProcessor }}个逻辑核心/线程</p>
-              </div>
-            </Tooltip>
-            <div class="statusBottom">{{ statusInfo.cpu.cpuCore }}核心</div>
-          </Col>
-          <Col span="4">
-            <div class="statusTop">内存使用率</div>
+      </div>
+
+      <div class="status-grid">
+        <!-- 负载状态 -->
+        <div class="status-item">
+          <div class="status-label">负载状态</div>
+          <Tooltip placement="bottom" max-width="200">
             <Circle
-              :percent="statusInfo.mem.percent"
+              :percent="statusInfo.load.percent"
               dashboard
               :size="100"
-              :stroke-color="statusInfo.mem.color"
-              class="statusCircle"
+              :stroke-color="statusInfo.load.color"
+              stroke-width="6"
             >
-              <span class="demo-circle-inner" style="font-size: 24px"
-                >{{ statusInfo.mem.percent }}%</span
-              >
-            </Circle>
-            <div class="statusBottom">
-              {{ statusInfo.mem.memUsed }} / {{ statusInfo.mem.memTotal }}(MB)
-            </div>
-          </Col>
-          <Col span="4" v-for="(item, index) in diskList" :key="index">
-            <div class="statusTop">{{ item.mountedOn }}</div>
-            <Tooltip placement="bottom" max-width="200">
-              <div slot="content" style="font-size:11px">
-                <p>文件系统：{{ item.fileSystem }}</p>
-                <p>容量：{{ item.size }}</p>
-                <p>已使用+系统占用：{{ item.used }}</p>
-                <p>可使用：{{ item.avail }}</p>
-                <p>使用率：{{ item.percent }}%</p>
-                <p>挂载点：{{ item.mountedOn }}</p>
+              <div class="circle-content">
+                <span class="circle-value">{{ statusInfo.load.percent }}%</span>
               </div>
-              <Circle
-                :percent="item.percent"
-                dashboard
-                :size="100"
-                :stroke-color="item.color"
-                class="statusCircle"
-              >
-                <span class="demo-circle-inner" style="font-size: 24px"
-                  >{{ item.percent }}%</span
-                >
-              </Circle>
-            </Tooltip>
-            <div class="statusBottom">
-              {{ item.used }} /
-              {{ item.size }}
+            </Circle>
+            <div slot="content" class="tooltip-info">
+              <p>1分钟负载：{{ statusInfo.load.cpuLoad1Min }}</p>
+              <p>5分钟负载：{{ statusInfo.load.cpuLoad5Min }}</p>
+              <p>15分钟负载：{{ statusInfo.load.cpuLoad15Min }}</p>
             </div>
-          </Col>
-        </Row>
+          </Tooltip>
+          <div class="status-desc">{{ statusInfo.load.title }}</div>
+        </div>
+
+        <!-- CPU使用率 -->
+        <div class="status-item">
+          <div class="status-label">CPU使用率</div>
+          <Tooltip placement="bottom" max-width="200">
+            <Circle
+              :percent="statusInfo.cpu.percent"
+              dashboard
+              :size="100"
+              :stroke-color="statusInfo.cpu.color"
+              stroke-width="6"
+            >
+              <div class="circle-content">
+                <span class="circle-value">{{ statusInfo.cpu.percent }}%</span>
+              </div>
+            </Circle>
+            <div slot="content" class="tooltip-info">
+              <p v-for="item in statusInfo.cpu.cpu" :key="item">{{ item }}</p>
+              <p>{{ statusInfo.cpu.cpuPhysical }}个物理CPU | {{ statusInfo.cpu.cpuCore }}核心</p>
+            </div>
+          </Tooltip>
+          <div class="status-desc">{{ statusInfo.cpu.cpuCore }} 核心</div>
+        </div>
+
+        <!-- 内存使用率 -->
+        <div class="status-item">
+          <div class="status-label">内存使用率</div>
+          <Circle
+            :percent="statusInfo.mem.percent"
+            dashboard
+            :size="100"
+            :stroke-color="statusInfo.mem.color"
+            stroke-width="6"
+          >
+            <div class="circle-content">
+              <span class="circle-value">{{ statusInfo.mem.percent }}%</span>
+            </div>
+          </Circle>
+          <div class="status-desc">
+            {{ statusInfo.mem.memUsed }} / {{ statusInfo.mem.memTotal }} MB
+          </div>
+        </div>
+
+        <!-- 磁盘占用 -->
+        <div class="status-item" v-for="(item, index) in diskList" :key="'disk-'+index">
+          <div class="status-label">{{ item.mountedOn }}</div>
+          <Tooltip placement="bottom" max-width="200">
+            <div slot="content" class="tooltip-info">
+              <p>文件系统：{{ item.fileSystem }}</p>
+              <p>容量：{{ item.size }} | 已用：{{ item.used }}</p>
+              <p>可用：{{ item.avail }}</p>
+            </div>
+            <Circle
+              :percent="item.percent"
+              dashboard
+              :size="100"
+              :stroke-color="item.color"
+              stroke-width="6"
+            >
+              <div class="circle-content">
+                <span class="circle-value">{{ item.percent }}%</span>
+              </div>
+            </Circle>
+          </Tooltip>
+          <div class="status-desc">{{ item.used }} / {{ item.size }}</div>
+        </div>
       </div>
     </Card>
-    <Card :bordered="false" :dis-hover="true" style="margin-bottom: 10px">
-      <p slot="title">
-        <Icon type="ios-options" />
-        统计
-      </p>
-      <div>
-        <Row :gutter="16" style="margin-bottom: 10px">
-          <Col span="4">
-            <Card :dis-hover="true">
-              <div style="text-align: center">
-                <p>SVN仓库</p>
-                <h2 style="color: #28bcfe">{{ systemBrif.repCount }}</h2>
+
+    <!-- 业务统计 -->
+    <Card :bordered="false" :dis-hover="true" class="stat-group-card">
+      <div slot="title" class="card-header-slot">
+        <Icon type="ios-stats" class="header-icon" />
+        <span class="header-title">业务统计概览</span>
+      </div>
+
+      <div class="stat-section">
+        <h3 class="section-title">资源资产</h3>
+        <Row :gutter="16">
+          <Col :xs="12" :sm="8" :md="4">
+            <div class="stat-box">
+              <div class="stat-icon-wrapper blue">
+                <Icon type="md-cube" />
               </div>
-            </Card>
+              <div class="stat-info">
+                <div class="stat-label">SVN仓库</div>
+                <div class="stat-value">{{ systemBrif.repCount }}</div>
+              </div>
+            </div>
           </Col>
-          <Col span="4">
-            <Card :dis-hover="true">
-              <div style="text-align: center">
-                <p>仓库占用</p>
-                <h2 style="color: #28bcfe">{{ systemBrif.repSize }}</h2>
+          <Col :xs="12" :sm="8" :md="4">
+            <div class="stat-box">
+              <div class="stat-icon-wrapper cyan">
+                <Icon type="md-cloud-done" />
               </div>
-            </Card>
+              <div class="stat-info">
+                <div class="stat-label">仓库占用</div>
+                <div class="stat-value small">{{ systemBrif.repSize }}</div>
+              </div>
+            </div>
           </Col>
-          <Col span="4">
-            <Card :dis-hover="true">
-              <div style="text-align: center">
-                <p>仓库备份</p>
-                <h2 style="color: #28bcfe">{{ systemBrif.backupCount }}</h2>
+          <Col :xs="12" :sm="8" :md="4">
+            <div class="stat-box">
+              <div class="stat-icon-wrapper orange">
+                <Icon type="md-copy" />
               </div>
-            </Card>
+              <div class="stat-info">
+                <div class="stat-label">仓库备份</div>
+                <div class="stat-value">{{ systemBrif.backupCount }}</div>
+              </div>
+            </div>
           </Col>
-          <Col span="4">
-            <Card :dis-hover="true">
-              <div style="text-align: center">
-                <p>备份占用</p>
-                <h2 style="color: #28bcfe">{{ systemBrif.backupSize }}</h2>
+          <Col :xs="12" :sm="8" :md="4">
+            <div class="stat-box">
+              <div class="stat-icon-wrapper purple">
+                <Icon type="md-archive" />
               </div>
-            </Card>
+              <div class="stat-info">
+                <div class="stat-label">备份占用</div>
+                <div class="stat-value small">{{ systemBrif.backupSize }}</div>
+              </div>
+            </div>
           </Col>
-          <Col span="4">
-            <Card :dis-hover="true">
-              <div style="text-align: center">
-                <p>运行日志</p>
-                <h2 style="color: #28bcfe">{{ systemBrif.logCount }}</h2>
+          <Col :xs="12" :sm="8" :md="4">
+            <div class="stat-box">
+              <div class="stat-icon-wrapper grey">
+                <Icon type="md-paper" />
               </div>
-            </Card>
+              <div class="stat-info">
+                <div class="stat-label">运行日志</div>
+                <div class="stat-value">{{ systemBrif.logCount }}</div>
+              </div>
+            </div>
           </Col>
         </Row>
+
+        <h3 class="section-title mt-20">权限架构</h3>
         <Row :gutter="16">
-          <Col span="4">
-            <Card :dis-hover="true">
-              <div style="text-align: center">
-                <p>管理员</p>
-                <h2 style="color: #28bcfe">{{ systemBrif.adminCount }}</h2>
+          <Col :xs="12" :sm="8" :md="4">
+            <div class="stat-box">
+              <div class="stat-icon-wrapper primary">
+                <Icon type="md-contact" />
               </div>
-            </Card>
+              <div class="stat-info">
+                <div class="stat-label">管理员</div>
+                <div class="stat-value">{{ systemBrif.adminCount }}</div>
+              </div>
+            </div>
           </Col>
-          <Col span="4">
-            <Card :dis-hover="true">
-              <div style="text-align: center">
-                <p>子管理员</p>
-                <h2 style="color: #28bcfe">{{ systemBrif.subadminCount }}</h2>
+          <Col :xs="12" :sm="8" :md="4">
+            <div class="stat-box">
+              <div class="stat-icon-wrapper green">
+                <Icon type="md-contacts" />
               </div>
-            </Card>
+              <div class="stat-info">
+                <div class="stat-label">子管理员</div>
+                <div class="stat-value">{{ systemBrif.subadminCount }}</div>
+              </div>
+            </div>
           </Col>
-          <Col span="4">
-            <Card :dis-hover="true">
-              <div style="text-align: center">
-                <p>SVN用户</p>
-                <h2 style="color: #28bcfe">{{ systemBrif.userCount }}</h2>
+          <Col :xs="12" :sm="8" :md="4">
+            <div class="stat-box">
+              <div class="stat-icon-wrapper blue">
+                <Icon type="md-person" />
               </div>
-            </Card>
+              <div class="stat-info">
+                <div class="stat-label">SVN用户</div>
+                <div class="stat-value">{{ systemBrif.userCount }}</div>
+              </div>
+            </div>
           </Col>
-          <Col span="4">
-            <Card :dis-hover="true">
-              <div style="text-align: center">
-                <p>SVN分组</p>
-                <h2 style="color: #28bcfe">{{ systemBrif.groupCount }}</h2>
+          <Col :xs="12" :sm="8" :md="4">
+            <div class="stat-box">
+              <div class="stat-icon-wrapper cyan">
+                <Icon type="md-people" />
               </div>
-            </Card>
+              <div class="stat-info">
+                <div class="stat-label">SVN分组</div>
+                <div class="stat-value">{{ systemBrif.groupCount }}</div>
+              </div>
+            </div>
           </Col>
-          <Col span="4">
-            <Card :dis-hover="true">
-              <div style="text-align: center">
-                <p>SVN别名</p>
-                <h2 style="color: #28bcfe">{{ systemBrif.aliaseCount }}</h2>
+          <Col :xs="12" :sm="8" :md="4">
+            <div class="stat-box">
+              <div class="stat-icon-wrapper grey">
+                <Icon type="md-pricetags" />
               </div>
-            </Card>
+              <div class="stat-info">
+                <div class="stat-label">SVN别名</div>
+                <div class="stat-value">{{ systemBrif.aliaseCount }}</div>
+              </div>
+            </div>
           </Col>
         </Row>
       </div>
@@ -237,27 +264,27 @@ export default {
        */
       statusInfo: {
         load: {
-          cpuLoad15Min: 0.22,
-          cpuLoad5Min: 0.28,
-          cpuLoad1Min: 0.32,
-          percent: 16,
-          color: "#28bcfe",
+          cpuLoad15Min: 0,
+          cpuLoad5Min: 0,
+          cpuLoad1Min: 0,
+          percent: 0,
+          color: "#2d8cf0",
         },
         cpu: {
-          percent: 28.2,
-          cpu: ["Intel(R) Xeon(R) Platinum 8255C CPU @ 2.50GHz"],
-          cpuPhysical: 1,
-          cpuPhysicalCore: 1,
-          cpuCore: 1,
-          cpuProcessor: 1,
-          color: "#28bcfe",
+          percent: 0,
+          cpu: [],
+          cpuPhysical: 0,
+          cpuPhysicalCore: 0,
+          cpuCore: 0,
+          cpuProcessor: 0,
+          color: "#2d8cf0",
         },
         mem: {
-          memTotal: 1838,
-          memUsed: 975,
-          memFree: 863,
-          percent: 53,
-          color: "#28bcfe",
+          memTotal: 0,
+          memUsed: 0,
+          memFree: 0,
+          percent: 0,
+          color: "#2d8cf0",
         },
       },
       /**
@@ -265,15 +292,11 @@ export default {
        */
       systemBrif: {
         os: "",
-
         repCount: 0,
         repSize: 0,
-
         backupCount: 0,
         backupSize: 0,
-
         logCount: 0,
-
         adminCount: 0,
         subadminCount: 0,
         userCount: 0,
@@ -282,113 +305,173 @@ export default {
       },
     };
   },
-  computed: {},
-  created() {},
   mounted() {
-    var that = this;
-    if (that.display.part1) {
-      that.GetDiskInfo();
-      that.GetLoadInfo();
-      //设置定时器
-      that.timer = window.setInterval(() => {
-        setTimeout(that.GetLoadInfo(), 0);
+    if (this.display.part1) {
+      this.GetDiskInfo();
+      this.GetLoadInfo();
+      this.timer = window.setInterval(() => {
+        this.GetLoadInfo();
       }, 3000);
-      //离开页面清除定时器
-      that.$once("hook:beforeDestroy", () => {
-        clearInterval(that.timer);
+      this.$once("hook:beforeDestroy", () => {
+        clearInterval(this.timer);
       });
     }
-    if (that.display.part2) {
-      that.GetStatisticsInfo();
+    if (this.display.part2) {
+      this.GetStatisticsInfo();
     }
   },
   methods: {
-    /**
-     * 获取磁盘
-     */
     GetDiskInfo() {
-      var that = this;
-      var data = {};
-      that.$axios
-        .post("api.php?c=Statistics&a=GetDiskInfo&t=web", data)
-        .then(function (response) {
-          var result = response.data;
-          if (result.status == 1) {
-            // that.$Message.success(result.message);
-            that.diskList = result.data;
-          } else {
-            that.$Message.error({ content: result.message, duration: 2 });
-          }
-        })
-        .catch(function (error) {
-          console.log(error);
-          that.$Message.error("出错了 请联系管理员！");
+      this.$axios.post("api.php?c=Statistics&a=GetDiskInfo&t=web")
+        .then(res => {
+          if (res.data.status == 1) this.diskList = res.data.data;
         });
     },
-    /**
-     * 获取状态
-     */
     GetLoadInfo() {
-      var that = this;
-      var data = {};
-      that.$axios
-        .post("api.php?c=Statistics&a=GetLoadInfo&t=web", data)
-        .then(function (response) {
-          var result = response.data;
-          if (result.status == 1) {
-            // that.$Message.success(result.message);
-            that.statusInfo = result.data;
-          } else {
-            that.$Message.error({ content: result.message, duration: 2 });
-          }
-        })
-        .catch(function (error) {
-          console.log(error);
-          that.$Message.error("出错了 请联系管理员！");
+      this.$axios.post("api.php?c=Statistics&a=GetLoadInfo&t=web")
+        .then(res => {
+          if (res.data.status == 1) this.statusInfo = res.data.data;
         });
     },
-    /**
-     * 获取统计
-     */
     GetStatisticsInfo() {
-      var that = this;
-      var data = {};
-      that.$axios
-        .post("api.php?c=Statistics&a=GetStatisticsInfo&t=web", data)
-        .then(function (response) {
-          var result = response.data;
-          if (result.status == 1) {
-            // that.$Message.success(result.message);
-            that.systemBrif = result.data;
-          } else {
-            that.$Message.error({ content: result.message, duration: 2 });
-          }
-        })
-        .catch(function (error) {
-          console.log(error);
-          that.$Message.error("出错了 请联系管理员！");
+      this.$axios.post("api.php?c=Statistics&a=GetStatisticsInfo&t=web")
+        .then(res => {
+          if (res.data.status == 1) this.systemBrif = res.data.data;
         });
     },
   },
 };
 </script>
 
-<style>
-.statusTop {
-  width: 140px;
-  text-align: center;
-  margin-bottom: 5px;
+<style scoped lang="less">
+.dashboard-container {
+  padding: 0;
+}
 
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.card-header-slot {
+  display: flex;
+  align-items: center;
+  .header-icon {
+    font-size: 20px;
+    margin-right: 8px;
+    color: var(--primary-color);
+  }
+  .header-title {
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .header-os-info {
+    margin-left: 12px;
+  }
 }
-.statusCircle {
-  margin-left: 20px;
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 20px;
+  padding: 10px 0;
 }
-.statusBottom {
-  width: 140px;
+
+.status-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
-  margin-bottom: 15px;
+
+  .status-label {
+    font-size: 13px;
+    color: var(--text-sub);
+    margin-bottom: 12px;
+    font-weight: 500;
+  }
+
+  .circle-content {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    .circle-value {
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+  }
+
+  .status-desc {
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--text-light);
+    background: #f4f5f7;
+    padding: 2px 8px;
+    border-radius: 10px;
+  }
+}
+
+.stat-section {
+  .section-title {
+    font-size: 14px;
+    color: var(--text-main);
+    margin-bottom: 16px;
+    padding-left: 8px;
+    border-left: 3px solid var(--primary-color);
+    line-height: 1;
+  }
+  .mt-20 { margin-top: 24px; }
+}
+
+.stat-box {
+  display: flex;
+  align-items: center;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  margin-bottom: 16px;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: var(--primary-color);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  }
+
+  .stat-icon-wrapper {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    margin-right: 12px;
+
+    &.blue { background: #e6f7ff; color: #1890ff; }
+    &.cyan { background: #e6fffb; color: #13c2c2; }
+    &.orange { background: #fff7e6; color: #fa8c16; }
+    &.purple { background: #f9f0ff; color: #722ed1; }
+    &.primary { background: #f0f7ff; color: #2d8cf0; }
+    &.green { background: #f6ffed; color: #52c41a; }
+    &.grey { background: #f5f5f5; color: #595959; }
+  }
+
+  .stat-info {
+    .stat-label {
+      font-size: 12px;
+      color: var(--text-light);
+      margin-bottom: 2px;
+    }
+    .stat-value {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text-main);
+      line-height: 1.2;
+      &.small { font-size: 14px; }
+    }
+  }
+}
+
+.tooltip-info {
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 4px;
 }
 </style>

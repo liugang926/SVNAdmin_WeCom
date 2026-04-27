@@ -1,11 +1,35 @@
-version: '3.8'
-
 services:
   svnadmin:
     build:
       context: .
       dockerfile: Dockerfile.optimized
     container_name: svnadmin-local-optimized
+    command:
+      - /bin/sh
+      - -c
+      - |
+        sed -i 's/\r$//' /root/start.sh /root/hook_manager.sh /root/db_auto_init.sh
+        if grep -q 'dav_svn_module' /etc/httpd/conf.d/subversion.conf 2>/dev/null; then rm -f /etc/httpd/conf.d/00-svn-modules.conf; fi
+        mkdir -p /home/svnadmin/rep /home/svnadmin/backup /home/svnadmin/crond /home/svnadmin/temp /home/svnadmin/logs /home/svnadmin/hooks /home/svnadmin/sasl/ldap /home/svnadmin/templete/initStruct/01/trunk /home/svnadmin/templete/initStruct/01/branches /home/svnadmin/templete/initStruct/01/tags /home/svnadmin/templete/pid
+        touch /home/svnadmin/svnserve /home/svnadmin/svnserve.pid /home/svnadmin/svnserve.conf /home/svnadmin/authz /home/svnadmin/passwd /home/svnadmin/httpPasswd /home/svnadmin/logs/svnserve.log /home/svnadmin/sasl/ldap/saslauthd.conf
+        sed -i 's/\r$//' /home/svnadmin/authz /home/svnadmin/passwd /home/svnadmin/svnserve.conf 2>/dev/null || true
+        chmod -R 777 /home/svnadmin/rep /home/svnadmin/backup /home/svnadmin/crond /home/svnadmin/temp /home/svnadmin/logs /home/svnadmin/hooks /home/svnadmin/sasl /home/svnadmin/templete
+        chmod 666 /home/svnadmin/svnserve /home/svnadmin/svnserve.pid /home/svnadmin/svnserve.conf /home/svnadmin/authz /home/svnadmin/passwd /home/svnadmin/httpPasswd /home/svnadmin/logs/svnserve.log /home/svnadmin/sasl/ldap/saslauthd.conf
+        (
+          while true; do
+            pid="$(pgrep -x svnserve | head -n 1 || true)"
+            if [ -n "$$pid" ]; then
+              current=""
+              if [ -f /home/svnadmin/svnserve.pid ]; then current="$(cat /home/svnadmin/svnserve.pid 2>/dev/null || true)"; fi
+              if [ "$$current" != "$$pid" ]; then echo "$$pid" > /home/svnadmin/svnserve.pid; fi
+              chmod 666 /home/svnadmin/svnserve.pid 2>/dev/null || true
+            else
+              rm -f /home/svnadmin/svnserve.pid
+            fi
+            sleep 2
+          done
+        ) &
+        exec /root/start.sh
     ports:
       - "8080:80"
       - "3690:3690"

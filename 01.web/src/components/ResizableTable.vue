@@ -1,5 +1,5 @@
 <template>
-  <div class="resizable-table-wrapper">
+  <div class="resizable-table-wrapper" :class="{ 'is-resizing': isResizing }">
     <Table
       ref="resizableTable"
       v-bind="$attrs"
@@ -10,12 +10,16 @@
       @on-column-width-resize="handleColumnResize"
       border
       size="small"
+      class="custom-modern-table"
     >
       <!-- 透传所有插槽 -->
       <template v-for="(_, slot) of $scopedSlots" v-slot:[slot]="scope">
         <slot :name="slot" v-bind="scope" />
       </template>
     </Table>
+    
+    <!-- 拖拽时的全局遮罩，防止 iframe 或选区干扰 -->
+    <div v-if="isResizing" class="resizing-mask"></div>
   </div>
 </template>
 
@@ -36,17 +40,14 @@ export default {
       type: Boolean,
       default: false
     },
-    // 表格标识，用于保存列宽配置
     tableKey: {
       type: String,
       required: true
     },
-    // 是否启用列宽调整
     resizable: {
       type: Boolean,
       default: true
     },
-    // 是否保存列宽配置到本地存储
     saveColumnWidth: {
       type: Boolean,
       default: true
@@ -55,7 +56,8 @@ export default {
   data() {
     return {
       enhancedColumns: [],
-      columnWidths: {}
+      columnWidths: {},
+      isResizing: false
     }
   },
   watch: {
@@ -69,139 +71,76 @@ export default {
   },
   mounted() {
     this.loadColumnWidths()
+    
+    // 监听原生事件以优化交互状态
+    const tableEl = this.$el.querySelector('.ivu-table-header')
+    if (tableEl) {
+      tableEl.addEventListener('mousedown', (e) => {
+        if (e.target.classList.contains('ivu-table-header-resizable')) {
+          this.isResizing = true
+          document.addEventListener('mouseup', this.stopResizing)
+        }
+      })
+    }
+  },
+  beforeDestroy() {
+    document.removeEventListener('mouseup', this.stopResizing)
   },
   methods: {
-    /**
-     * 初始化列配置
-     */
+    stopResizing() {
+      this.isResizing = false
+      document.removeEventListener('mouseup', this.stopResizing)
+    },
+    
     initializeColumns(columns) {
       this.enhancedColumns = columns.map(column => {
         const enhancedColumn = { ...column }
-        
-        // 如果启用了列宽调整功能
         if (this.resizable) {
-          // 设置默认可调整大小
           enhancedColumn.resizable = column.resizable !== false
-          
-          // 如果没有设置宽度，使用最小宽度
           if (!enhancedColumn.width && !enhancedColumn.minWidth) {
-            enhancedColumn.minWidth = 80
+            enhancedColumn.minWidth = 100
           }
-          
-          // 从本地存储加载保存的列宽
           const columnKey = column.key || column.slot
-          if (columnKey) {
-            const savedWidth = this.columnWidths[columnKey]
-            if (savedWidth) {
-              enhancedColumn.width = savedWidth
-            }
+          if (columnKey && this.columnWidths[columnKey]) {
+            enhancedColumn.width = this.columnWidths[columnKey]
           }
         }
-        
         return enhancedColumn
       })
     },
     
-    /**
-     * 处理列宽调整事件
-     */
-    handleColumnResize(newWidth, oldWidth, column, event) {
+    handleColumnResize(newWidth, oldWidth, column) {
       const columnKey = column.key || column.slot
-      
       if (columnKey) {
-        // 更新内存中的列宽
         this.$set(this.columnWidths, columnKey, newWidth)
-        
-        // 保存到本地存储
         if (this.saveColumnWidth) {
           this.saveColumnWidths()
         }
-        
-        // 触发自定义事件
-        this.$emit('on-column-resize', {
-          columnKey,
-          newWidth,
-          oldWidth,
-          column,
-          event
-        })
+        this.$emit('on-column-resize', { columnKey, newWidth, oldWidth })
       }
     },
     
-    /**
-     * 从本地存储加载列宽配置
-     */
     loadColumnWidths() {
       if (!this.saveColumnWidth || !this.tableKey) return
-      
       try {
-        const storageKey = `table_column_widths_${this.tableKey}`
-        const savedWidths = localStorage.getItem(storageKey)
-        
-        if (savedWidths) {
-          this.columnWidths = JSON.parse(savedWidths)
-          // 重新初始化列配置以应用保存的宽度
+        const storageKey = `table_widths_${this.tableKey}`
+        const saved = localStorage.getItem(storageKey)
+        if (saved) {
+          this.columnWidths = JSON.parse(saved)
           this.initializeColumns(this.columns)
         }
-      } catch (error) {
-        console.warn('加载表格列宽配置失败:', error)
+      } catch (e) {
+        console.warn('Failed to load column widths', e)
       }
     },
     
-    /**
-     * 保存列宽配置到本地存储
-     */
     saveColumnWidths() {
       if (!this.saveColumnWidth || !this.tableKey) return
-      
       try {
-        const storageKey = `table_column_widths_${this.tableKey}`
+        const storageKey = `table_widths_${this.tableKey}`
         localStorage.setItem(storageKey, JSON.stringify(this.columnWidths))
-      } catch (error) {
-        console.warn('保存表格列宽配置失败:', error)
-      }
-    },
-    
-    /**
-     * 重置列宽配置
-     */
-    resetColumnWidths() {
-      this.columnWidths = {}
-      
-      if (this.saveColumnWidth && this.tableKey) {
-        const storageKey = `table_column_widths_${this.tableKey}`
-        localStorage.removeItem(storageKey)
-      }
-      
-      // 重新初始化列配置
-      this.initializeColumns(this.columns)
-      
-      this.$Message.success('列宽配置已重置')
-    },
-    
-    /**
-     * 获取表格实例
-     */
-    getTableInstance() {
-      return this.$refs.resizableTable
-    },
-    
-    /**
-     * 导出列宽配置
-     */
-    exportColumnWidths() {
-      return { ...this.columnWidths }
-    },
-    
-    /**
-     * 导入列宽配置
-     */
-    importColumnWidths(widths) {
-      this.columnWidths = { ...widths }
-      this.initializeColumns(this.columns)
-      
-      if (this.saveColumnWidth) {
-        this.saveColumnWidths()
+      } catch (e) {
+        console.warn('Failed to save column widths', e)
       }
     }
   }
@@ -211,60 +150,65 @@ export default {
 <style lang="less" scoped>
 .resizable-table-wrapper {
   position: relative;
+  border-radius: var(--border-radius);
+  overflow: hidden;
+  background: #fff;
+  box-shadow: var(--shadow-light);
   
-  // 增强表格样式
-  /deep/ .ivu-table {
-    // 列调整手柄样式
-    .ivu-table-header {
-      .ivu-table-cell {
-        position: relative;
-        
-        &:hover {
-          .column-resize-handle {
-            opacity: 1;
-          }
-        }
-      }
-    }
-    
-    // 调整手柄
-    .column-resize-handle {
-      position: absolute;
-      right: 0;
-      top: 0;
-      bottom: 0;
-      width: 4px;
-      cursor: col-resize;
-      background: #dcdee2;
-      opacity: 0;
-      transition: opacity 0.2s;
-      
-      &:hover {
-        background: #2d8cf0;
-      }
-    }
-    
-    // 调整过程中的样式
-    &.column-resizing {
-      user-select: none;
-      
-      .column-resize-handle {
-        opacity: 1;
-        background: #2d8cf0;
-      }
-    }
+  &.is-resizing {
+    cursor: col-resize;
+    user-select: none;
   }
 }
 
-// 响应式调整
-@media (max-width: 768px) {
-  .resizable-table-wrapper {
-    /deep/ .ivu-table {
-      font-size: 12px;
-      
-      .ivu-table-cell {
-        padding: 8px 4px;
-      }
+.resizing-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  cursor: col-resize;
+}
+
+.custom-modern-table {
+  /deep/ .ivu-table-header {
+    th {
+      background-color: #f8f9fb;
+      color: var(--text-main);
+      font-weight: 600;
+      height: 44px;
+      border-bottom: 1px solid var(--border-color);
+    }
+  }
+  
+  /deep/ .ivu-table-row {
+    td {
+      height: 48px;
+      color: var(--text-sub);
+    }
+    
+    &:hover td {
+      background-color: var(--primary-light);
+    }
+  }
+
+  /deep/ .ivu-table-header-resizable {
+    position: relative;
+    
+    &::after {
+      content: '';
+      position: absolute;
+      right: 0;
+      top: 25%;
+      height: 50%;
+      width: 1px;
+      background: var(--border-color);
+    }
+    
+    &:hover::after {
+      width: 2px;
+      background: var(--primary-color);
     }
   }
 }

@@ -12,6 +12,31 @@ echo "Standard UTF-8 environment variables set for Chinese repository support"
 unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
 echo "Proxy settings cleared for runtime"
 
+# Seed a clean data directory when /home/svnadmin is an empty mounted volume.
+# This keeps first-time deployments deterministic and avoids packaging local
+# test data into production images.
+DEFAULT_DATA_DIR="/opt/svnadmin/default-data"
+if [ -d "$DEFAULT_DATA_DIR" ]; then
+  echo "Checking default SVNAdmin runtime data..."
+  mkdir -p /home/svnadmin
+
+  for item in svnadmin.db authz passwd httpPasswd svnserve.conf svnserve; do
+    if [ -f "$DEFAULT_DATA_DIR/$item" ] && [ ! -s "/home/svnadmin/$item" ]; then
+      cp -f "$DEFAULT_DATA_DIR/$item" "/home/svnadmin/$item"
+      echo "Initialized /home/svnadmin/$item from default data"
+    fi
+  done
+
+  for dir in hooks logs sasl; do
+    if [ -d "$DEFAULT_DATA_DIR/$dir" ] && [ ! -d "/home/svnadmin/$dir" ]; then
+      cp -a "$DEFAULT_DATA_DIR/$dir" "/home/svnadmin/$dir"
+      echo "Initialized /home/svnadmin/$dir from default data"
+    fi
+  done
+
+  chown -R apache:apache /home/svnadmin 2>/dev/null || true
+fi
+
 # 生产环境兼容性处理（支持外部挂载配置）
 echo "Checking production environment compatibility..."
 if [ -d "/home/svnadmin/conf.d" ] && [ "$(ls -A /home/svnadmin/conf.d 2>/dev/null)" ]; then
@@ -42,7 +67,7 @@ fi
 
 # 首次启动执行原项目安装脚本（幂等）
 cd /var/www/html
-if [ ! -f "/home/svnadmin/svnserve" ]; then
+if [ ! -s "/home/svnadmin/svnadmin.db" ]; then
   echo "Running original installer (server/install.php)..."
   php server/install.php > /var/www/html/logs/install.log 2>&1 || true
   chown -R apache:apache /home/svnadmin || true
@@ -59,18 +84,19 @@ else
 fi
 
 # 执行企业微信数据库迁移（保护现有配置）
-echo "Running WeCom database migration..."
-if [ -f "04.update/wecom-integration/database_migration.php" ]; then
-  php 04.update/wecom-integration/database_migration.php > /var/www/html/logs/wecom_migration.log 2>&1 || true
-  echo "WeCom migration completed"
+echo "Running safe upgrade migration..."
+if [ -f "04.update/wecom-ldap-upgrade/migrate.php" ]; then
+  php 04.update/wecom-ldap-upgrade/migrate.php > /var/www/html/logs/upgrade_migration.log 2>&1 || {
+    echo "Safe upgrade migration failed. See /var/www/html/logs/upgrade_migration.log"
+    exit 1
+  }
+  echo "Safe upgrade migration completed"
+else
+  echo "Safe upgrade migration script not found, skipping..."
 fi
 
 # 执行通知规则表迁移（向后兼容）
-echo "Running notification rules table migration..."
-if [ -f "templete/database/sqlite/notification_rules_migration.sql" ]; then
-  sqlite3 /home/svnadmin/svnadmin.db < templete/database/sqlite/notification_rules_migration.sql > /var/www/html/logs/migration.log 2>&1 || true
-  echo "Legacy migration completed"
-fi
+echo "Legacy notification rules table migration is disabled; safe migration owns schema upgrades."
 
 # 智能修复SVN钩子（基于通知规则）
 echo "Smart repairing SVN hooks based on notification rules..."
@@ -142,6 +168,9 @@ echo "Comprehensive authz file check and fix..."
 
 # 检查authz文件是否存在
 AUTHZ_FILE="/home/svnadmin/authz"
+if [ -f "$AUTHZ_FILE" ]; then
+    sed -i 's/\r$//' "$AUTHZ_FILE"
+fi
 if [ ! -f "$AUTHZ_FILE" ]; then
     echo "Creating default authz file..."
     cat > "$AUTHZ_FILE" << 'EOF'
@@ -252,6 +281,82 @@ else
     echo "Groups found: $groups_count, Empty groups: $empty_groups"
 fi
 
+# Keep exactly one [groups] section. Subversion rejects authz files with
+# duplicate section names, and older repairs could preserve duplicates.
+if [ -f "$AUTHZ_FILE" ]; then
+    DEDUP_AUTHZ="/tmp/authz.dedup"
+    awk '
+    function emit_groups() {
+        print "[groups]"
+        if (group_count > 0) {
+            for (i = 1; i <= group_count; i++) {
+                print group_lines[i]
+            }
+        } else {
+            print "# SVN groups will be added here automatically"
+        }
+        print ""
+    }
+    NR == FNR {
+        if ($0 ~ /^[[:space:]]*\[groups\][[:space:]]*$/) {
+            in_groups = 1
+            next
+        }
+        if ($0 ~ /^[[:space:]]*\[[^]]+\][[:space:]]*$/) {
+            in_groups = 0
+            next
+        }
+        if (in_groups) {
+            line = $0
+            if (line ~ /^[[:space:]]*$/ || line ~ /^[[:space:]]*#/) {
+                next
+            }
+            if (line ~ /=/) {
+                sub(/^[[:space:]]*/, "", line)
+                sub(/[[:space:]]*$/, "", line)
+                split(line, parts, "=")
+                name = parts[1]
+                gsub(/[[:space:]]/, "", name)
+                if (name != "" && !(name in seen_group)) {
+                    seen_group[name] = 1
+                    sub(/[[:space:]]*=[[:space:]]*/, "=", line)
+                    group_lines[++group_count] = line
+                }
+            }
+        }
+        next
+    }
+    {
+        if ($0 ~ /^[[:space:]]*\[groups\][[:space:]]*$/) {
+            if (!groups_emitted) {
+                emit_groups()
+                groups_emitted = 1
+            }
+            skip_group = 1
+            next
+        }
+        if ($0 ~ /^[[:space:]]*\[[^]]+\][[:space:]]*$/) {
+            skip_group = 0
+            print
+            next
+        }
+        if (skip_group) {
+            next
+        }
+        print
+    }
+    END {
+        if (!groups_emitted) {
+            print ""
+            emit_groups()
+        }
+    }
+    ' "$AUTHZ_FILE" "$AUTHZ_FILE" > "$DEDUP_AUTHZ"
+    mv "$DEDUP_AUTHZ" "$AUTHZ_FILE"
+    chmod 664 "$AUTHZ_FILE"
+    chown apache:apache "$AUTHZ_FILE"
+fi
+
 # 验证authz文件语法
 echo "Validating authz file syntax..."
 if command -v svnlook >/dev/null 2>&1; then
@@ -305,18 +410,19 @@ fi
 # 尝试启动svnserve，如果失败则尝试不同的配置
 MAX_RETRIES=3
 RETRY_COUNT=0
+rm -f /home/svnadmin/svnserve.pid
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
     echo "Attempting to start svnserve (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)..."
     
     if [ $RETRY_COUNT -eq 0 ]; then
         # 第一次尝试：使用完整配置
-        svnserve -d -r /home/svnadmin/rep --config-file /home/svnadmin/svnserve.conf --log-file /home/svnadmin/logs/svnserve.log 2>&1
+        svnserve -d --pid-file /home/svnadmin/svnserve.pid -r /home/svnadmin/rep --config-file /home/svnadmin/svnserve.conf --log-file /home/svnadmin/logs/svnserve.log 2>&1
     elif [ $RETRY_COUNT -eq 1 ]; then
         # 第二次尝试：不使用authz文件
         echo "Trying without authz file..."
         sed -i 's/^authz-db = authz/#authz-db = authz/' /home/svnadmin/svnserve.conf
-        svnserve -d -r /home/svnadmin/rep --config-file /home/svnadmin/svnserve.conf --log-file /home/svnadmin/logs/svnserve.log 2>&1
+        svnserve -d --pid-file /home/svnadmin/svnserve.pid -r /home/svnadmin/rep --config-file /home/svnadmin/svnserve.conf --log-file /home/svnadmin/logs/svnserve.log 2>&1
     else
         # 第三次尝试：最小配置
         echo "Trying with minimal configuration..."
@@ -326,12 +432,18 @@ anon-access = read
 auth-access = write
 password-db = passwd
 EOF
-        svnserve -d -r /home/svnadmin/rep --config-file /home/svnadmin/svnserve.conf --log-file /home/svnadmin/logs/svnserve.log 2>&1
+        svnserve -d --pid-file /home/svnadmin/svnserve.pid -r /home/svnadmin/rep --config-file /home/svnadmin/svnserve.conf --log-file /home/svnadmin/logs/svnserve.log 2>&1
     fi
     
     # 检查svnserve是否启动成功
     sleep 3
     if pgrep svnserve > /dev/null; then
+        SVNSERVE_PID="$(pgrep -x svnserve | head -n 1)"
+        if [ -n "$SVNSERVE_PID" ] && [ ! -s /home/svnadmin/svnserve.pid ]; then
+            echo "$SVNSERVE_PID" > /home/svnadmin/svnserve.pid
+        fi
+        chown apache:apache /home/svnadmin/svnserve.pid 2>/dev/null || true
+        chmod 666 /home/svnadmin/svnserve.pid 2>/dev/null || true
         echo "SVN server started successfully"
         break
     else

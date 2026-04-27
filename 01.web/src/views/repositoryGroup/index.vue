@@ -61,6 +61,10 @@
             @on-blur="UpdGroupNote(index, row.svn_group_name)"
           />
         </template>
+        <template slot-scope="{ row }" slot="svn_group_source">
+          <Tag color="blue" v-if="row.svn_group_source == 'ldap'">LDAP</Tag>
+          <Tag color="green" v-else>manual</Tag>
+        </template>
         <template slot-scope="{ row }" slot="action">
           <Button
             type="success"
@@ -71,7 +75,7 @@
           <Button
             type="warning"
             size="small"
-            @click="ModalEditGroupName(row.svn_group_name)"
+            @click="ModalEditGroupName(row)"
             >编辑</Button
           >
           <Button
@@ -106,6 +110,12 @@
         <FormItem label="分组名">
           <Input v-model="formCreateGroup.svn_group_name"></Input>
         </FormItem>
+        <FormItem label="显示名">
+          <Input
+            v-model="formCreateGroup.svn_group_display_name"
+            placeholder="默认使用分组名"
+          ></Input>
+        </FormItem>
         <FormItem>
           <Alert type="warning" show-icon
             >分组名只能包含字母、数字、破折号、下划线、点。</Alert
@@ -139,6 +149,12 @@
       <Form :model="formEditGroupName" :label-width="80">
         <FormItem label="分组名">
           <Input v-model="formEditGroupName.groupNameNew"></Input>
+        </FormItem>
+        <FormItem label="显示名">
+          <Input
+            v-model="formEditGroupName.groupDisplayName"
+            placeholder="默认使用分组名"
+          ></Input>
         </FormItem>
         <FormItem>
           <Alert type="warning" show-icon
@@ -179,7 +195,7 @@
         <Col span="12">
           <Input
             search
-            placeholder="通过对象名称搜索..."
+            placeholder="通过对象名称、姓名、显示名、邮箱搜索..."
             v-model="searchKeywordGroupMember"
             @on-change="GetGroupMember"
           />
@@ -187,11 +203,13 @@
       </Row>
       <Table
         border
+        resizable
         :height="310"
         size="small"
         :loading="loadingGetGroupMember"
         :columns="tableColumnGroupMember"
         :data="tableDataGroupMember"
+        @on-column-width-resize="onColumnWidthResize"
         style="margin-top: 20px"
       >
         <template slot-scope="{ row }" slot="objectType">
@@ -350,12 +368,14 @@ export default {
       //新建分组
       formCreateGroup: {
         svn_group_name: "",
+        svn_group_display_name: "",
         svn_group_note: "",
       },
       //编辑分组
       formEditGroupName: {
         groupNameOld: "",
         groupNameNew: "",
+        groupDisplayName: "",
       },
 
       /**
@@ -376,6 +396,22 @@ export default {
           tooltip: true,
           sortable: "custom",
           width: 150,
+          resizable: true,
+        },
+        {
+          title: "显示名",
+          key: "svn_group_display_name",
+          tooltip: true,
+          sortable: "custom",
+          width: 150,
+          resizable: true,
+        },
+        {
+          title: "来源",
+          key: "svn_group_source",
+          slot: "svn_group_source",
+          sortable: "custom",
+          width: 100,
           resizable: true,
         },
         {
@@ -419,17 +455,23 @@ export default {
         {
           title: "对象类型",
           slot: "objectType",
-          // width: 125,
+          width: 140,
+          minWidth: 110,
+          resizable: true,
         },
         {
           title: "对象名称",
-          key: "objectName",
+          key: "objectLabel",
           tooltip: true,
-          // width: 115,
+          width: 260,
+          minWidth: 160,
+          resizable: true,
         },
         {
           title: "操作",
           slot: "action",
+          width: 100,
+          resizable: false,
         },
       ],
       tableDataGroupMember: [],
@@ -580,6 +622,11 @@ export default {
      * 添加分组
      */
     ModalCreateGroup() {
+      this.formCreateGroup = {
+        svn_group_name: "",
+        svn_group_display_name: "",
+        svn_group_note: "",
+      };
       this.modalAddGroup = true;
     },
     CreateGroup() {
@@ -587,6 +634,7 @@ export default {
       that.loadingCreateGroup = true;
       var data = {
         svn_group_name: that.formCreateGroup.svn_group_name,
+        svn_group_display_name: that.formCreateGroup.svn_group_display_name,
         svn_group_note: that.formCreateGroup.svn_group_note,
       };
       that.$axios
@@ -640,13 +688,16 @@ export default {
     /**
      * 编辑分组名称
      */
-    ModalEditGroupName(svn_group_name) {
+    ModalEditGroupName(row) {
+      const svn_group_name = row.svn_group_name;
       //备份旧名称
       this.formEditGroupName.groupNameOld = svn_group_name;
       //自动显示输入信息
       this.formEditGroupName.groupNameNew = svn_group_name;
+      this.formEditGroupName.groupDisplayName =
+        row.svn_group_display_name || svn_group_name;
       //标题
-      this.titleEditGroupName = "编辑SVN分组名 - " + svn_group_name;
+      this.titleEditGroupName = "编辑SVN分组 - " + svn_group_name;
       //对话框
       this.modalEditGroupName = true;
     },
@@ -656,6 +707,7 @@ export default {
       var data = {
         groupNameOld: that.formEditGroupName.groupNameOld,
         groupNameNew: that.formEditGroupName.groupNameNew,
+        groupDisplayName: that.formEditGroupName.groupDisplayName,
       };
       that.$axios
         .post("api.php?c=Svngroup&a=UpdGroupName&t=web", data)

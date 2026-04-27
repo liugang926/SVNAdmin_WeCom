@@ -51,12 +51,13 @@ class Svngroup extends Base
                 return message($result['code'], $result['status'], $result['message'], $result['data']);
             }
 
-            $result = $this->SyncAuthzToDb();
+            $groupDetails = isset($result['data']['groupDetails']) ? $result['data']['groupDetails'] : [];
+            $result = $this->SyncAuthzToDb('ldap', $groupDetails);
             if ($result['status'] != 1) {
                 return message($result['code'], $result['status'], $result['message'], $result['data']);
             }
         } else {
-            $result = $this->SyncAuthzToDb();
+            $result = $this->SyncAuthzToDb('manual');
             if ($result['status'] != 1) {
                 return message($result['code'], $result['status'], $result['message'], $result['data']);
             }
@@ -70,7 +71,7 @@ class Svngroup extends Base
      *
      * @return array
      */
-    private function SyncAuthzToDb()
+    private function SyncAuthzToDb($defaultGroupSource = 'manual', $groupDetails = [])
     {
         /**
          * 删除数据表重复插入的项
@@ -79,6 +80,11 @@ class Svngroup extends Base
             'svn_group_id',
             'svn_group_name',
             'svn_group_note',
+            'svn_group_display_name',
+            'svn_group_source',
+            'svn_group_external_id',
+            'svn_group_dn',
+            'svn_group_sync_time',
             'include_user_count [Int]',
             'include_group_count [Int]',
             'include_aliase_count [Int]'
@@ -128,28 +134,62 @@ class Svngroup extends Base
         //新增
         $create = array_diff($new, $old);
         foreach ($create as $value) {
+            $detail = isset($groupDetails[$value]) ? $groupDetails[$value] : [];
             $this->database->insert('svn_groups', [
                 'svn_group_name' => $value,
                 'include_user_count' => $newCombin[$value]['include']['users']['count'],
                 'include_group_count' => $newCombin[$value]['include']['groups']['count'],
                 'include_aliase_count' => $newCombin[$value]['include']['aliases']['count'],
                 'svn_group_note' => '',
+                'svn_group_display_name' => !empty($detail['svn_group_display_name']) ? $detail['svn_group_display_name'] : $value,
+                'svn_group_source' => $defaultGroupSource,
+                'svn_group_external_id' => isset($detail['svn_group_external_id']) ? $detail['svn_group_external_id'] : '',
+                'svn_group_dn' => isset($detail['svn_group_dn']) ? $detail['svn_group_dn'] : '',
+                'svn_group_sync_time' => date('Y-m-d H:i:s'),
             ]);
         }
 
         //更新
         $update = array_intersect($old, $new);
         foreach ($update as $value) {
-            if (
-                $oldCombin[$value]['include_user_count'] !=  $newCombin[$value]['include']['users']['count'] ||
-                $oldCombin[$value]['include_group_count'] !=  $newCombin[$value]['include']['groups']['count'] ||
-                $oldCombin[$value]['include_aliase_count'] !=  $newCombin[$value]['include']['aliases']['count']
-            ) {
-                $this->database->update('svn_groups', [
-                    'include_user_count' => $newCombin[$value]['include']['users']['count'],
-                    'include_group_count' => $newCombin[$value]['include']['groups']['count'],
-                    'include_aliase_count' => $newCombin[$value]['include']['aliases']['count']
-                ], [
+            $detail = isset($groupDetails[$value]) ? $groupDetails[$value] : [];
+            $updateData = [];
+
+            $includeUserCount = $newCombin[$value]['include']['users']['count'];
+            $includeGroupCount = $newCombin[$value]['include']['groups']['count'];
+            $includeAliaseCount = $newCombin[$value]['include']['aliases']['count'];
+            if ($oldCombin[$value]['include_user_count'] != $includeUserCount) {
+                $updateData['include_user_count'] = $includeUserCount;
+            }
+            if ($oldCombin[$value]['include_group_count'] != $includeGroupCount) {
+                $updateData['include_group_count'] = $includeGroupCount;
+            }
+            if ($oldCombin[$value]['include_aliase_count'] != $includeAliaseCount) {
+                $updateData['include_aliase_count'] = $includeAliaseCount;
+            }
+
+            $displayName = !empty($detail['svn_group_display_name'])
+                ? $detail['svn_group_display_name']
+                : (empty($oldCombin[$value]['svn_group_display_name']) ? $value : $oldCombin[$value]['svn_group_display_name']);
+            if (($oldCombin[$value]['svn_group_display_name'] ?? '') != $displayName) {
+                $updateData['svn_group_display_name'] = $displayName;
+            }
+
+            $groupSource = empty($oldCombin[$value]['svn_group_source']) ? $defaultGroupSource : $oldCombin[$value]['svn_group_source'];
+            if (($oldCombin[$value]['svn_group_source'] ?? '') != $groupSource) {
+                $updateData['svn_group_source'] = $groupSource;
+            }
+
+            if (isset($detail['svn_group_external_id']) && ($oldCombin[$value]['svn_group_external_id'] ?? '') != $detail['svn_group_external_id']) {
+                $updateData['svn_group_external_id'] = $detail['svn_group_external_id'];
+            }
+            if (isset($detail['svn_group_dn']) && ($oldCombin[$value]['svn_group_dn'] ?? '') != $detail['svn_group_dn']) {
+                $updateData['svn_group_dn'] = $detail['svn_group_dn'];
+            }
+
+            if (!empty($updateData)) {
+                $updateData['svn_group_sync_time'] = date('Y-m-d H:i:s');
+                $this->database->update('svn_groups', $updateData, [
                     'svn_group_name' => $value
                 ]);
             }
@@ -179,7 +219,7 @@ class Svngroup extends Base
         }
 
         //检查排序字段
-        if (!in_array($this->payload['sortName'], ['svn_group_id', 'svn_group_name'])) {
+        if (!in_array($this->payload['sortName'], ['svn_group_id', 'svn_group_name', 'svn_group_display_name', 'svn_group_source'])) {
             return message(2000, '不允许的排序字段');
         }
         if (!in_array($this->payload['sortType'], ['asc', 'desc', 'ASC', 'DESC'])) {
@@ -207,6 +247,11 @@ class Svngroup extends Base
         $result = $this->database->select('svn_groups', [
             'svn_group_id',
             'svn_group_name',
+            'svn_group_display_name',
+            'svn_group_source',
+            'svn_group_external_id',
+            'svn_group_dn',
+            'svn_group_sync_time',
             'svn_group_note',
             'include_user_count [Int]',
             'include_group_count [Int]',
@@ -222,6 +267,8 @@ class Svngroup extends Base
             foreach ($result as $key => $value) {
                 if (
                     strstr($value['svn_group_name'], $searchKeyword) === false &&
+                    strstr($value['svn_group_display_name'], $searchKeyword) === false &&
+                    strstr($value['svn_group_source'], $searchKeyword) === false &&
                     strstr($value['svn_group_note'], $searchKeyword) === false
                 ) {
                     unset($result[$key]);
@@ -260,6 +307,14 @@ class Svngroup extends Base
             $result = array_slice($result, $begin, $pageSize);
         }
 
+        foreach ($result as $key => $value) {
+            $result[$key]['svn_group_display_name'] = !empty($value['svn_group_display_name']) ? $value['svn_group_display_name'] : $value['svn_group_name'];
+            $result[$key]['svn_group_source'] = $value['svn_group_source'] ?? 'manual';
+            $result[$key]['svn_group_external_id'] = $value['svn_group_external_id'] ?? '';
+            $result[$key]['svn_group_dn'] = $value['svn_group_dn'] ?? '';
+            $result[$key]['svn_group_sync_time'] = $value['svn_group_sync_time'] ?? '';
+        }
+
         return message(200, 1, '成功', [
             'data' => array_values($result),
             'total' => $total
@@ -283,16 +338,27 @@ class Svngroup extends Base
     /**
      * 创建SVN分组
      */
+    private function CheckGroupMutable($groupName)
+    {
+        $group = $this->database->get('svn_groups', [
+            'svn_group_source'
+        ], [
+            'svn_group_name' => $groupName
+        ]);
+
+        if (!empty($group) && isset($group['svn_group_source']) && $group['svn_group_source'] == 'ldap') {
+            return message(200, 0, '当前分组来源为LDAP，请在LDAP侧维护成员和名称；本系统仅允许授权引用该分组');
+        }
+
+        return message();
+    }
+
     public function CreateGroup()
     {
         if ($this->enableCheckout == 'svn') {
             $dataSource = $this->svnDataSource;
         } else {
             $dataSource = $this->httpDataSource;
-        }
-
-        if ($dataSource['user_source'] == 'ldap' && $dataSource['group_source'] == 'ldap') {
-            return message(200, 0, '当前SVN分组来源为LDAP-不支持此操作');
         }
 
         //检查分组名是否合法
@@ -314,9 +380,17 @@ class Svngroup extends Base
         }
 
         //写入配置文件
-        funFilePutContents($this->configSvn['svn_authz_file'], $result);
+        $writeResult = $this->WriteAuthzFile($result);
+        if ($writeResult['status'] != 1) {
+            return $writeResult;
+        }
 
         //写入数据库
+        $groupDisplayName = isset($this->payload['svn_group_display_name']) ? trim($this->payload['svn_group_display_name']) : '';
+        if ($groupDisplayName == '') {
+            $groupDisplayName = $this->payload['svn_group_name'];
+        }
+
         $this->database->delete('svn_groups', [
             'svn_group_name' => $this->payload['svn_group_name']
         ]);
@@ -326,6 +400,11 @@ class Svngroup extends Base
             'include_group_count' => 0,
             'include_aliase_count' => 0,
             'svn_group_note' => $this->payload['svn_group_note'],
+            'svn_group_display_name' => $groupDisplayName,
+            'svn_group_source' => 'manual',
+            'svn_group_external_id' => '',
+            'svn_group_dn' => '',
+            'svn_group_sync_time' => date('Y-m-d H:i:s'),
         ]);
 
         //日志
@@ -349,8 +428,9 @@ class Svngroup extends Base
             $dataSource = $this->httpDataSource;
         }
 
-        if ($dataSource['user_source'] == 'ldap' && $dataSource['group_source'] == 'ldap') {
-            return message(200, 0, '当前SVN分组来源为LDAP-不支持此操作');
+        $mutableResult = $this->CheckGroupMutable($this->payload['svn_group_name']);
+        if ($mutableResult['status'] != 1) {
+            return $mutableResult;
         }
 
         //从authz文件删除
@@ -365,7 +445,10 @@ class Svngroup extends Base
             }
         }
 
-        funFilePutContents($this->configSvn['svn_authz_file'], $result);
+        $writeResult = $this->WriteAuthzFile($result);
+        if ($writeResult['status'] != 1) {
+            return $writeResult;
+        }
 
         //从数据库删除
         $this->database->delete('svn_groups', [
@@ -393,8 +476,9 @@ class Svngroup extends Base
             $dataSource = $this->httpDataSource;
         }
 
-        if ($dataSource['user_source'] == 'ldap' && $dataSource['group_source'] == 'ldap') {
-            return message(200, 0, '当前SVN分组来源为LDAP-不支持此操作');
+        $mutableResult = $this->CheckGroupMutable($this->payload['groupNameOld']);
+        if ($mutableResult['status'] != 1) {
+            return $mutableResult;
         }
 
         //新分组名称是否合法
@@ -404,6 +488,21 @@ class Svngroup extends Base
         }
 
         //修改前同步下
+        $groupDisplayName = isset($this->payload['groupDisplayName']) ? trim($this->payload['groupDisplayName']) : '';
+        if ($groupDisplayName == '') {
+            $groupDisplayName = $this->payload['groupNameNew'];
+        }
+
+        if ($this->payload['groupNameOld'] == $this->payload['groupNameNew']) {
+            $this->database->update('svn_groups', [
+                'svn_group_display_name' => $groupDisplayName
+            ], [
+                'svn_group_name' => $this->payload['groupNameOld']
+            ]);
+
+            return message();
+        }
+
         $syncResult = $this->SyncGroup();
         if ($syncResult['status'] != 1) {
             return message($syncResult['code'], $syncResult['status'], $syncResult['message'], $syncResult['data']);
@@ -428,7 +527,10 @@ class Svngroup extends Base
             }
         }
 
-        funFilePutContents($this->configSvn['svn_authz_file'], $result);
+        $writeResult = $this->WriteAuthzFile($result);
+        if ($writeResult['status'] != 1) {
+            return $writeResult;
+        }
 
         //修改后同步下
         parent::RereadAuthz();
@@ -436,6 +538,12 @@ class Svngroup extends Base
         if ($result['status'] != 1) {
             return message($result['code'], $result['status'], $result['message'], $result['data']);
         }
+
+        $this->database->update('svn_groups', [
+            'svn_group_display_name' => $groupDisplayName
+        ], [
+            'svn_group_name' => $this->payload['groupNameNew']
+        ]);
 
         return message();
     }
@@ -489,29 +597,26 @@ class Svngroup extends Base
 
         $result = [];
         foreach ($list['include']['users']['list'] as $value) {
-            if (empty($searchKeyword) || strstr($value, $searchKeyword)) {
-                $result[] = [
-                    'objectType' => 'user',
-                    'objectName' => $value,
-                ];
-            }
+            $result[] = [
+                'objectType' => 'user',
+                'objectName' => $value,
+            ];
         }
         foreach ($list['include']['groups']['list'] as $value) {
-            if (empty($searchKeyword) || strstr($value, $searchKeyword)) {
-                $result[] = [
-                    'objectType' => 'group',
-                    'objectName' => $value,
-                ];
-            }
+            $result[] = [
+                'objectType' => 'group',
+                'objectName' => $value,
+            ];
         }
         foreach ($list['include']['aliases']['list'] as $value) {
-            if (empty($searchKeyword) || strstr($value, $searchKeyword)) {
-                $result[] = [
-                    'objectType' => 'aliase',
-                    'objectName' => $value,
-                ];
-            }
+            $result[] = [
+                'objectType' => 'aliase',
+                'objectName' => $value,
+            ];
         }
+
+        $result = $this->EnrichSvnObjectList($result);
+        $result = $this->FilterSvnObjectList($result, $searchKeyword);
 
         return message(200, 1, '成功', $result);
     }
@@ -528,8 +633,9 @@ class Svngroup extends Base
             $dataSource = $this->httpDataSource;
         }
 
-        if ($dataSource['user_source'] == 'ldap' && $dataSource['group_source'] == 'ldap') {
-            return message(200, 0, '当前SVN分组来源为LDAP-不支持此操作');
+        $mutableResult = $this->CheckGroupMutable($this->payload['svn_group_name']);
+        if ($mutableResult['status'] != 1) {
+            return $mutableResult;
         }
 
         $result = $this->SVNAdmin->UpdGroupMember($this->authzContent, $this->payload['svn_group_name'], $this->payload['objectName'], $this->payload['objectType'], $this->payload['actionType']);
@@ -562,7 +668,10 @@ class Svngroup extends Base
             }
         }
 
-        funFilePutContents($this->configSvn['svn_authz_file'], $result);
+        $writeResult = $this->WriteAuthzFile($result);
+        if ($writeResult['status'] != 1) {
+            return $writeResult;
+        }
 
         //修改后同步下
         parent::RereadAuthz();

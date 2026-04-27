@@ -501,6 +501,37 @@ class WeComAdmin extends Base
     /**
      * 获取企业微信部门和用户映射
      */
+    private function NormalizeSvnUserForMapping($user)
+    {
+        if (empty($user)) {
+            return [
+                'svn_user_id' => null,
+                'svn_user_name' => null,
+                'svn_user_real_name' => '',
+                'svn_user_display_name' => '',
+                'svn_user_mail' => '',
+                'svn_user_note' => '',
+                'svn_user_label' => ''
+            ];
+        }
+
+        $userName = $user['svn_user_name'] ?? '';
+        $realName = $user['svn_user_real_name'] ?? '';
+        $displayName = $user['svn_user_display_name'] ?? '';
+        $labelName = $displayName != '' && $displayName != $userName ? $displayName : ($realName != '' ? $realName : $userName);
+        $label = $labelName == $userName ? $userName : $labelName . ' (' . $userName . ')';
+
+        return [
+            'svn_user_id' => $user['svn_user_id'] ?? null,
+            'svn_user_name' => $userName,
+            'svn_user_real_name' => $realName,
+            'svn_user_display_name' => $displayName,
+            'svn_user_mail' => $user['svn_user_mail'] ?? '',
+            'svn_user_note' => $user['svn_user_note'] ?? '',
+            'svn_user_label' => $label
+        ];
+    }
+
     public function GetMapping()
     {
         try {
@@ -535,7 +566,11 @@ class WeComAdmin extends Base
                 'wecom_users.email(wecom_email)',
                 'wecom_users.mobile(wecom_mobile)',
                 'wecom_users.department_ids(wecom_department_ids)',
+                'svn_users.svn_user_id',
                 'svn_users.svn_user_name',
+                'svn_users.svn_user_real_name',
+                'svn_users.svn_user_display_name',
+                'svn_users.svn_user_mail',
                 'svn_users.svn_user_note'
             ]);
 
@@ -556,13 +591,21 @@ class WeComAdmin extends Base
             if (empty($mappedSvnUserIds)) {
                 // 如果没有映射的用户，获取所有SVN用户
                 $unmappedSvnUsers = $database->select('svn_users', [
+                    'svn_user_id',
                     'svn_user_name',
+                    'svn_user_real_name',
+                    'svn_user_display_name',
+                    'svn_user_mail',
                     'svn_user_note'
                 ]);
             } else {
                 // 获取未映射的SVN用户
                 $unmappedSvnUsers = $database->select('svn_users', [
+                    'svn_user_id',
                     'svn_user_name',
+                    'svn_user_real_name',
+                    'svn_user_display_name',
+                    'svn_user_mail',
                     'svn_user_note'
                 ], [
                     'svn_user_id[!]' => $mappedSvnUserIds
@@ -581,6 +624,7 @@ class WeComAdmin extends Base
                         break;
                     }
                 }
+                $svnUser = $this->NormalizeSvnUserForMapping($mappedUser);
                 
                 $users[] = [
                     'wecom_userid' => $wecomUser['wecom_userid'],
@@ -588,22 +632,33 @@ class WeComAdmin extends Base
                     'wecom_email' => $wecomUser['wecom_email'],
                     'wecom_mobile' => $wecomUser['wecom_mobile'],
                     'wecom_department_ids' => $wecomUser['wecom_department_ids'],
-                    'svn_user_name' => $mappedUser ? $mappedUser['svn_user_name'] : null,
-                    'svn_user_note' => $mappedUser ? $mappedUser['svn_user_note'] : null,
+                    'svn_user_id' => $svnUser['svn_user_id'],
+                    'svn_user_name' => $svnUser['svn_user_name'],
+                    'svn_user_real_name' => $svnUser['svn_user_real_name'],
+                    'svn_user_display_name' => $svnUser['svn_user_display_name'],
+                    'svn_user_mail' => $svnUser['svn_user_mail'],
+                    'svn_user_note' => $svnUser['svn_user_note'],
+                    'svn_user_label' => $svnUser['svn_user_label'],
                     'user_type' => 'wecom'
                 ];
             }
             
             // 添加未映射的SVN用户（作为虚拟的企业微信用户显示）
             foreach ($unmappedSvnUsers as $svnUser) {
+                $svnUserInfo = $this->NormalizeSvnUserForMapping($svnUser);
                 $users[] = [
                     'wecom_userid' => null,
                     'wecom_name' => null,
                     'wecom_email' => null,
                     'wecom_mobile' => null,
                     'wecom_department_ids' => null,
-                    'svn_user_name' => $svnUser['svn_user_name'],
-                    'svn_user_note' => $svnUser['svn_user_note'],
+                    'svn_user_id' => $svnUserInfo['svn_user_id'],
+                    'svn_user_name' => $svnUserInfo['svn_user_name'],
+                    'svn_user_real_name' => $svnUserInfo['svn_user_real_name'],
+                    'svn_user_display_name' => $svnUserInfo['svn_user_display_name'],
+                    'svn_user_mail' => $svnUserInfo['svn_user_mail'],
+                    'svn_user_note' => $svnUserInfo['svn_user_note'],
+                    'svn_user_label' => $svnUserInfo['svn_user_label'],
                     'user_type' => 'svn_only'
                 ];
             }

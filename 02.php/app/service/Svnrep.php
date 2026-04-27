@@ -143,7 +143,10 @@ class Svnrep extends Base
                 return message(200, 0, "同步到配置文件错误$result");
             }
         }
-        funFilePutContents($this->configSvn['svn_authz_file'], $result);
+        $writeResult = $this->WriteAuthzFile($result);
+        if ($writeResult['status'] != 1) {
+            return $writeResult;
+        }
 
         //写入数据库
         $this->database->delete('svn_reps', [
@@ -286,7 +289,7 @@ class Svnrep extends Base
         }
 
         if ($authzContet != $this->authzContent) {
-            funFilePutContents($this->configSvn['svn_authz_file'], $authzContet);
+            $this->WriteAuthzFile($authzContet);
         }
     }
 
@@ -333,7 +336,7 @@ class Svnrep extends Base
 
         //写入配置文件
         if ($authzContent != $this->authzContent) {
-            funFilePutContents($this->configSvn['svn_authz_file'], $authzContent);
+            $this->WriteAuthzFile($authzContent);
         }
     }
 
@@ -1251,11 +1254,13 @@ class Svnrep extends Base
         $checkResult = funCheckForm($this->payload, [
             'path' => ['type' => 'string', 'notNull' => true],
             'rep_name' => ['type' => 'string', 'notNull' => true],
+            'searchKeyword' => ['type' => 'string', 'notNull' => false],
             'svnn_user_pri_path_id' => ['type' => 'integer', 'required' => $this->userRoleId == 2]
         ]);
         if ($checkResult['status'] == 0) {
             return message($checkResult['code'], $checkResult['status'], $checkResult['message'] . ': ' . $checkResult['data']['column']);
         }
+        $searchKeyword = trim($this->payload['searchKeyword'] ?? '');
 
         //检查仓库是否存在
         clearstatcache();
@@ -1304,6 +1309,8 @@ class Svnrep extends Base
             }
         } else {
             //针对SVN用户可管理对象进行过滤
+            $result = $this->EnrichSvnObjectList($result);
+            $result = $this->FilterSvnObjectList($result, $searchKeyword);
             if ($this->userRoleId == 2) {
                 $filters = $this->database->select('svn_second_pri', [
                     '[>]svn_user_pri_paths' => ['svnn_user_pri_path_id' => 'svnn_user_pri_path_id']
@@ -1445,7 +1452,10 @@ class Svnrep extends Base
         }
 
         //写入
-        funFilePutContents($this->configSvn['svn_authz_file'], $result);
+        $writeResult = $this->WriteAuthzFile($result);
+        if ($writeResult['status'] != 1) {
+            return $writeResult;
+        }
 
         //返回
         return message();
@@ -1551,7 +1561,10 @@ class Svnrep extends Base
         }
 
         //写入
-        funFilePutContents($this->configSvn['svn_authz_file'], $result);
+        $writeResult = $this->WriteAuthzFile($result);
+        if ($writeResult['status'] != 1) {
+            return $writeResult;
+        }
 
         //返回
         return message();
@@ -1648,7 +1661,10 @@ class Svnrep extends Base
         }
 
         //写入
-        funFilePutContents($this->configSvn['svn_authz_file'], $result);
+        $writeResult = $this->WriteAuthzFile($result);
+        if ($writeResult['status'] != 1) {
+            return $writeResult;
+        }
 
         //返回
         return message();
@@ -1785,7 +1801,10 @@ class Svnrep extends Base
                 return message(200, 0, "错误码$authzContet");
             }
         } else {
-            funFilePutContents($this->configSvn['svn_authz_file'], $authzContet);
+            $writeResult = $this->WriteAuthzFile($authzContet);
+            if ($writeResult['status'] != 1) {
+                return $writeResult;
+            }
         }
 
         //从数据库中删除
@@ -2620,7 +2639,13 @@ class Svnrep extends Base
                 }
             } else {
                 // 成功获取更新后的authz内容，写入文件
-                funFilePutContents($this->configSvn['svn_authz_file'], $result);
+                $writeResult = $this->WriteAuthzFile($result);
+                if ($writeResult['status'] != 1) {
+                    return [
+                        'success' => false,
+                        'message' => $writeResult['message']
+                    ];
+                }
                 
                 $this->ServiceLogs->InsertLog(
                     '仓库权限迁移',

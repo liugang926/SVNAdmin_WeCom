@@ -7,7 +7,11 @@
       @on-visible-change="ChangeModalVisible"
       title="对象列表"
     >
-      <Tabs size="small" @on-click="ClickRepPathPriTab">
+      <Tabs
+        v-model="activeObjectTab"
+        size="small"
+        @on-click="ClickRepPathPriTab"
+      >
         <TabPane :label="custom_tab_svn_user" name="user" v-if="showSvnUserTab">
           <Row style="margin-bottom: 15px">
             <Col type="flex" justify="space-between" span="12">
@@ -29,7 +33,7 @@
             <Col span="12">
               <Input
                 search
-                placeholder="通过用户名搜索..."
+                placeholder="通过用户名、姓名、显示名、邮箱搜索..."
                 v-model="searchKeywordUser"
                 @on-change="GetAllUsers()"
               />
@@ -38,11 +42,13 @@
           <Table
             highlight-row
             border
+            resizable
             :height="250"
             size="small"
             :loading="loadingAllUsers"
             :columns="tableColumnAllUsers"
             :data="tableDataAllUsers"
+            @on-column-width-resize="onColumnWidthResize"
             style="margin-bottom: 10px"
           >
             <template slot-scope="{ index }" slot="index">
@@ -55,6 +61,12 @@
                 >正常</Tag
               >
               <Tag color="red" v-else>禁用</Tag>
+            </template>
+            <template slot-scope="{ row }" slot="svn_user_source">
+              <Tag color="blue" v-if="row.svn_user_source == 'ldap'">LDAP</Tag>
+              <Tag color="green" v-else-if="row.svn_user_source == 'passwd'">passwd</Tag>
+              <Tag color="cyan" v-else-if="row.svn_user_source == 'httpPasswd'">httpPasswd</Tag>
+              <Tag color="default" v-else>{{ row.svn_user_source || "manual" }}</Tag>
             </template>
             <template slot-scope="{ row }" slot="action">
               <Tag
@@ -103,7 +115,7 @@
             <Col span="12">
               <Input
                 search
-                placeholder="通过分组名搜索..."
+                placeholder="通过分组名、显示名搜索..."
                 v-model="searchKeywordGroup"
                 @on-change="GetAllGroups()"
               />
@@ -112,11 +124,13 @@
           <Table
             highlight-row
             border
+            resizable
             :height="250"
             size="small"
             :loading="loadingAllGroups"
             :columns="tableColumnAllGroups"
             :data="tableDataAllGroups"
+            @on-column-width-resize="onColumnWidthResize"
             style="margin-bottom: 10px"
           >
             <template slot-scope="{ index }" slot="index">
@@ -188,10 +202,12 @@
           <Table
             highlight-row
             border
+            resizable
             :height="250"
             size="small"
             :columns="tableColumnAllAliases"
             :data="tableDataAllAliases"
+            @on-column-width-resize="onColumnWidthResize"
             style="margin-bottom: 10px"
           >
             <template slot-scope="{ row }" slot="disabled">
@@ -220,10 +236,12 @@
           <Table
             highlight-row
             border
+            resizable
             :height="250"
             size="small"
             :columns="tableColumnAll"
             :data="tableDataAll"
+            @on-column-width-resize="onColumnWidthResize"
             style="margin-bottom: 10px"
           >
             <template slot="action" slot-scope="{ index }">
@@ -251,10 +269,12 @@
           <Table
             highlight-row
             border
+            resizable
             :height="250"
             size="small"
             :columns="tableColumnAuthenticated"
             :data="tableDataAuthenticated"
+            @on-column-width-resize="onColumnWidthResize"
             style="margin-bottom: 10px"
           >
             <template slot="action" slot-scope="{ index }">
@@ -284,10 +304,12 @@
           <Table
             highlight-row
             border
+            resizable
             :height="250"
             size="small"
             :columns="tableColumnAnonymous"
             :data="tableDataAnonymous"
+            @on-column-width-resize="onColumnWidthResize"
             style="margin-bottom: 10px"
           >
             <template slot="action" slot-scope="{ index }">
@@ -321,7 +343,7 @@
         <Col span="12">
           <Input
             search
-            placeholder="通过对象名称搜索..."
+            placeholder="通过对象名称、姓名、显示名、邮箱搜索..."
             v-model="searchKeywordGroupMember"
             @on-change="GetGroupMember"
           />
@@ -329,11 +351,13 @@
       </Row>
       <Table
         border
+        resizable
         :height="310"
         size="small"
         :loading="loadingGetGroupMember"
         :columns="tableColumnGroupMember"
         :data="tableDataGroupMember"
+        @on-column-width-resize="onColumnWidthResize"
         style="margin-top: 20px"
       >
         <template slot-scope="{ row }" slot="objectType">
@@ -498,6 +522,7 @@ export default {
           ),
         ]);
       },
+      activeObjectTab: "user",
 
       /**
        * 分页数据
@@ -565,60 +590,107 @@ export default {
       //获取分组成员列表
       loadingGetGroupMember: true,
 
+      tableColumnStorageKey: "svn_object_modal_column_widths",
+
       //对象列表-SVN用户列表
       tableColumnAllUsers: [
-        {
-          title: "序号",
-          slot: "index",
-          fixed: "left",
-          // minWidth: 40,
-        },
         {
           title: "用户名",
           key: "svn_user_name",
           tooltip: true,
+          width: 300,
+          minWidth: 160,
+          resizable: true,
         },
         {
-          title: "用户状态",
-          slot: "svn_user_status",
-        },
-        {
-          title: "备注信息",
-          key: "svn_user_note",
+          title: "姓名",
+          key: "svn_user_real_name",
           tooltip: true,
+          width: 120,
+          minWidth: 100,
+          resizable: true,
+        },
+        {
+          title: "显示名",
+          key: "svn_user_display_name",
+          tooltip: true,
+          width: 140,
+          minWidth: 110,
+          resizable: true,
+        },
+        {
+          title: "邮箱",
+          key: "svn_user_mail",
+          tooltip: true,
+          width: 170,
+          minWidth: 130,
+          resizable: true,
+        },
+        {
+          title: "来源",
+          key: "svn_user_source",
+          slot: "svn_user_source",
+          width: 110,
+          minWidth: 90,
+          resizable: true,
+        },
+        {
+          title: "状态",
+          slot: "svn_user_status",
+          width: 100,
+          minWidth: 80,
+          resizable: true,
         },
         {
           title: "操作",
           slot: "action",
           width: 90,
+          minWidth: 80,
+          align: 'center',
+          resizable: false,
         },
       ],
       tableDataAllUsers: [],
       //对象列表-SVN分组列表
       tableColumnAllGroups: [
         {
-          title: "序号",
-          slot: "index",
-          fixed: "left",
-          // minWidth: 80,
-        },
-        {
           title: "分组名",
           key: "svn_group_name",
           tooltip: true,
+          width: 300,
+          minWidth: 160,
+          resizable: true,
         },
         {
-          title: "备注信息",
-          key: "svn_group_note",
+          title: "显示名",
+          key: "svn_group_display_name",
           tooltip: true,
+          width: 150,
+          minWidth: 110,
+          resizable: true,
+        },
+        {
+          title: "来源",
+          key: "svn_group_source",
+          width: 100,
+          minWidth: 90,
+          resizable: true,
         },
         {
           title: "成员",
           slot: "member",
+          width: 100,
+          minWidth: 80,
+          align: 'center',
+          resizable: true,
         },
         {
           title: "操作",
           slot: "action",
+          width: 90,
+          minWidth: 80,
+          align: 'center',
+          resizable: false,
         },
       ],
       tableDataAllGroups: [],
@@ -628,15 +700,24 @@ export default {
           title: "别名",
           key: "aliaseName",
           tooltip: true,
+          width: 180,
+          minWidth: 140,
+          resizable: true,
         },
         {
           title: "别名内容",
           key: "aliaseCon",
           tooltip: true,
+          width: 220,
+          minWidth: 160,
+          resizable: true,
         },
         {
           title: "操作",
           slot: "action",
+          width: 90,
+          minWidth: 80,
+          resizable: false,
         },
       ],
       tableDataAllAliases: [],
@@ -645,10 +726,16 @@ export default {
         {
           title: "所有人",
           key: "all",
+          width: 390,
+          minWidth: 180,
+          resizable: true,
         },
         {
           title: "操作",
           slot: "action",
+          width: 90,
+          minWidth: 80,
+          resizable: false,
         },
       ],
       tableDataAll: [
@@ -661,10 +748,16 @@ export default {
         {
           title: "所有已认证者",
           key: "authenticated",
+          width: 390,
+          minWidth: 180,
+          resizable: true,
         },
         {
           title: "操作",
           slot: "action",
+          width: 90,
+          minWidth: 80,
+          resizable: false,
         },
       ],
       tableDataAuthenticated: [
@@ -677,10 +770,16 @@ export default {
         {
           title: "所有匿名者",
           key: "anonymous",
+          width: 390,
+          minWidth: 180,
+          resizable: true,
         },
         {
           title: "操作",
           slot: "action",
+          width: 90,
+          minWidth: 80,
+          resizable: false,
         },
       ],
       tableDataAnonymous: [
@@ -694,13 +793,17 @@ export default {
         {
           title: "对象类型",
           slot: "objectType",
-          // width: 125,
+          width: 180,
+          minWidth: 120,
+          resizable: true,
         },
         {
           title: "对象名称",
-          key: "objectName",
+          key: "objectLabel",
           tooltip: true,
-          // width: 115,
+          width: 300,
+          minWidth: 160,
+          resizable: true,
         },
       ],
     };
@@ -710,33 +813,148 @@ export default {
     propModalSvnObject: function (value) {
       this.modalSvnObject = value;
       if (value) {
-        this.GetAllUsers();
+        this.openDefaultTab();
       }
     },
     propShowSvnUserTab: function (value) {
       this.showSvnUserTab = value;
+      this.ensureActiveTabVisible();
     },
     propShowSvnGroupTab: function (value) {
       this.showSvnGroupTab = value;
+      this.ensureActiveTabVisible();
     },
     propShowSvnAliaseTab: function (value) {
       this.showSvnAliaseTab = value;
+      this.ensureActiveTabVisible();
     },
     propShowSvnAllTab: function (value) {
       this.showSvnAllTab = value;
+      this.ensureActiveTabVisible();
     },
     propShowSvnAuthenticatedTab: function (value) {
       this.showSvnAuthenticatedTab = value;
+      this.ensureActiveTabVisible();
     },
     propShowSvnAnonymousTab: function (value) {
       this.showSvnAnonymousTab = value;
+      this.ensureActiveTabVisible();
     },
     //SVN用户权限路径id
     propSvnnUserPriPathId: function (value) {
       this.svnn_user_pri_path_id = value;
     },
   },
+  mounted() {
+    this.loadColumnWidths();
+  },
   methods: {
+    getDefaultTabName() {
+      if (this.showSvnUserTab) {
+        return "user";
+      }
+      if (this.showSvnGroupTab) {
+        return "group";
+      }
+      if (this.showSvnAliaseTab) {
+        return "aliase";
+      }
+      if (this.showSvnAllTab) {
+        return "*";
+      }
+      if (this.showSvnAuthenticatedTab) {
+        return "$authenticated";
+      }
+      if (this.showSvnAnonymousTab) {
+        return "$anonymous";
+      }
+      return "";
+    },
+    isTabVisible(name) {
+      const visibleMap = {
+        user: this.showSvnUserTab,
+        group: this.showSvnGroupTab,
+        aliase: this.showSvnAliaseTab,
+        "*": this.showSvnAllTab,
+        "$authenticated": this.showSvnAuthenticatedTab,
+        "$anonymous": this.showSvnAnonymousTab,
+      };
+      return visibleMap[name] === true;
+    },
+    ensureActiveTabVisible() {
+      if (!this.modalSvnObject || this.isTabVisible(this.activeObjectTab)) {
+        return;
+      }
+      this.openDefaultTab();
+    },
+    openDefaultTab() {
+      this.activeObjectTab = this.getDefaultTabName();
+      this.loadObjectTab(this.activeObjectTab);
+    },
+    loadObjectTab(name) {
+      switch (name) {
+        case "user":
+          this.GetAllUsers();
+          break;
+        case "group":
+          this.GetAllGroups();
+          break;
+        case "aliase":
+          this.GetAliaseList();
+          break;
+        default:
+          break;
+      }
+    },
+    getResizableColumns() {
+      return [
+        this.tableColumnAllUsers,
+        this.tableColumnAllGroups,
+        this.tableColumnAllAliases,
+        this.tableColumnAll,
+        this.tableColumnAuthenticated,
+        this.tableColumnAnonymous,
+        this.tableColumnGroupMember,
+      ];
+    },
+    onColumnWidthResize(newWidth, oldWidth, column) {
+      this.saveColumnWidth(column.key || column.slot, newWidth);
+    },
+    loadColumnWidths() {
+      const savedWidths = localStorage.getItem(this.tableColumnStorageKey);
+      if (!savedWidths) {
+        return;
+      }
+      try {
+        const widths = JSON.parse(savedWidths);
+        this.getResizableColumns().forEach((columns) => {
+          columns.forEach((column) => {
+            const key = column.key || column.slot;
+            if (widths[key] && column.resizable !== false) {
+              this.$set(column, "width", widths[key]);
+            }
+          });
+        });
+      } catch (e) {
+        console.warn("Failed to load object modal column widths:", e);
+      }
+    },
+    saveColumnWidth(columnKey, width) {
+      if (!columnKey) {
+        return;
+      }
+      let widths = {};
+      const savedWidths = localStorage.getItem(this.tableColumnStorageKey);
+      if (savedWidths) {
+        try {
+          widths = JSON.parse(savedWidths);
+        } catch (e) {
+          console.warn("Failed to parse object modal column widths:", e);
+        }
+      }
+      widths[columnKey] = width;
+      localStorage.setItem(this.tableColumnStorageKey, JSON.stringify(widths));
+    },
     /**
      * 调用父组件方法
      * 更改父组件的变量状态
@@ -757,28 +975,7 @@ export default {
      * 点击对象列表弹出框下的 tab 触发
      */
     ClickRepPathPriTab(name) {
-      switch (name) {
-        case "user":
-          this.GetAllUsers();
-          break;
-        case "group":
-          this.GetAllGroups();
-          break;
-        case "aliase":
-          this.GetAliaseList();
-          break;
-        case "*":
-          //xxx
-          break;
-        case "$authenticated":
-          //xxx
-          break;
-        case "$anonymous":
-          //xxx
-          break;
-        default:
-          break;
-      }
+      this.loadObjectTab(name);
     },
     /**
      * 每页数量改变

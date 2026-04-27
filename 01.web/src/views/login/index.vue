@@ -1,85 +1,232 @@
-<style lang="less">
-@import "./login.less";
-</style>
-
 <template>
-  <div class="login">
-    <div class="login-con">
-      <Card icon="log-in" title="SVNAdmin V2.5.10" :bordered="false">
-        <div class="form-con">
+  <div class="login-wrapper">
+    <div class="login-container">
+      <!-- 左侧：品牌展示区 -->
+      <div class="login-brand">
+        <div class="brand-content">
+          <h1 class="brand-title">SVNAdmin Professional</h1>
+          <p class="brand-desc">企业级 Subversion 可视化管理平台</p>
+          <div class="feature-list">
+            <div class="feature-item">
+              <Icon type="md-checkmark-circle-outline" />
+              <span>深度集成企业微信通知</span>
+            </div>
+            <div class="feature-item">
+              <Icon type="md-checkmark-circle-outline" />
+              <span>精细化权限矩阵管理</span>
+            </div>
+            <div class="feature-item">
+              <Icon type="md-checkmark-circle-outline" />
+              <span>自动化钩子工作流</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右侧：登录表单区 -->
+      <div class="login-form-area">
+        <div class="login-card">
+          <div class="login-header">
+            <h2>欢迎回来</h2>
+            <p>请登录您的账号以继续管理</p>
+          </div>
+          
           <Form
             ref="formUserLogin"
             :model="formUserLogin"
             :rules="ruleValidateLogin"
             @keydown.enter.native="Submit('formUserLogin')"
+            label-position="top"
           >
-            <FormItem prop="user_name">
+            <FormItem prop="user_name" label="用户名">
               <Input
                 v-model="formUserLogin.user_name"
+                size="large"
                 placeholder="请输入用户名"
-              >
-                <span slot="prepend">
-                  <Icon :size="16" type="ios-person"></Icon>
-                </span>
-              </Input>
+                prefix="ios-person-outline"
+              />
             </FormItem>
-            <FormItem prop="user_pass">
+            
+            <FormItem prop="user_pass" label="密码">
               <Input
                 type="password"
                 password
+                size="large"
                 v-model="formUserLogin.user_pass"
                 placeholder="请输入密码"
-              >
-                <span slot="prepend">
-                  <Icon :size="14" type="md-lock"></Icon>
-                </span>
-              </Input>
+                prefix="ios-lock-outline"
+              />
             </FormItem>
-            <FormItem>
+
+            <FormItem label="身份角色">
               <Select
                 v-model="formUserLogin.user_role"
+                size="large"
                 :transfer="true"
                 @on-change="ChangeSelect"
               >
-                <Option value="1">管理人员</Option>
-                <Option value="3">子管理员</Option>
-                <Option value="2">SVN用户</Option>
+                <Option value="1">管理人员 (Administrator)</Option>
+                <Option value="3">子管理员 (Sub-Admin)</Option>
+                <Option value="2">SVN用户 (User)</Option>
               </Select>
             </FormItem>
-            <FormItem prop="code" v-if="verifyOption">
-              <Row>
-                <Col span="11"
-                  ><Input
-                    v-model="formUserLogin.code"
-                    placeholder="请输入验证码"
-                  ></Input
-                ></Col>
-                <Col span="1"></Col>
-                <Col span="12">
-                  <img
-                    @click="GetVerifyCode"
-                    :src="formUserLogin.base64"
-                    :alt="loadingGetVerifyCode"
-                    style="width: 100%; cursor: pointer"
-                  />
-                </Col>
-              </Row>
+
+            <FormItem prop="code" v-if="verifyOption" label="验证码">
+              <div class="captcha-wrapper">
+                <Input
+                  v-model="formUserLogin.code"
+                  size="large"
+                  placeholder="验证码"
+                  class="captcha-input"
+                />
+                <img
+                  @click="GetVerifyCode"
+                  :src="formUserLogin.base64"
+                  class="captcha-img"
+                />
+              </div>
             </FormItem>
-            <FormItem>
+
+            <FormItem style="margin-top: 32px">
               <Button
                 type="primary"
+                size="large"
                 long
                 @click="Submit('formUserLogin')"
                 :loading="loadingLogin"
-                >登录</Button
+                class="login-btn"
               >
+                立即登录
+              </Button>
             </FormItem>
           </Form>
+          
+          <div class="login-footer">
+            <p>© 2026 SVNAdmin WeCom Edition. All rights reserved.</p>
+          </div>
         </div>
-      </Card>
+      </div>
     </div>
   </div>
 </template>
+
+<style lang="less" scoped>
+.login-wrapper {
+  height: 100vh;
+  width: 100vw;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.login-container {
+  width: 1000px;
+  height: 640px;
+  background: #fff;
+  border-radius: 20px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.1);
+  display: flex;
+  overflow: hidden;
+}
+
+.login-brand {
+  flex: 1.2;
+  background-color: #2d8cf0;
+  background-image: linear-gradient(150deg, #2d8cf0 0%, #17233d 100%);
+  padding: 60px;
+  color: #fff;
+  display: flex;
+  align-items: center;
+}
+
+.brand-title {
+  font-size: 32px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.brand-desc {
+  font-size: 16px;
+  opacity: 0.8;
+  margin-bottom: 48px;
+}
+
+.feature-list {
+  .feature-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 16px;
+    font-size: 14px;
+    opacity: 0.9;
+    i {
+      margin-right: 12px;
+      font-size: 18px;
+    }
+  }
+}
+
+.login-form-area {
+  flex: 1;
+  padding: 40px 60px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.login-header {
+  margin-bottom: 32px;
+  h2 {
+    font-size: 24px;
+    color: #17233d;
+    margin-bottom: 8px;
+  }
+  p {
+    color: #808695;
+    font-size: 14px;
+  }
+}
+
+.captcha-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.captcha-img {
+  height: 36px;
+  width: 120px;
+  cursor: pointer;
+  border-radius: 4px;
+  border: 1px solid #dcdee2;
+}
+
+.login-btn {
+  height: 44px;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(45, 140, 240, 0.3);
+}
+
+.login-footer {
+  margin-top: 32px;
+  text-align: center;
+  color: #c5c8ce;
+  font-size: 12px;
+}
+
+/deep/ .ivu-form-item-label {
+  font-weight: 600;
+  color: #515a6e;
+  padding-bottom: 8px;
+}
+
+/deep/ .ivu-input-large {
+  border-radius: 8px;
+}
+</style>
 
 <script>
 export default {

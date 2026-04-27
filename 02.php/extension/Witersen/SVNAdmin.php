@@ -101,6 +101,16 @@ class SVNAdmin
      */
     private $reg_8 = "/^[ \t]*(%s)[ \t]*:[ \t]*(.*)[ \t]*$/m";
 
+    private function NormalizeHttpPasswdContent($passwdContent)
+    {
+        $passwdContent = str_replace(["\r\n", "\r"], "\n", $passwdContent);
+        return preg_replace(
+            '/(#\s*Format:\s*username:encrypted_password)(#disabled#)?([A-Za-z0-9\-_.一-龥]+:)/u',
+            '$1' . "\n" . '$2$3',
+            $passwdContent
+        );
+    }
+
     /**
      * @var string 匹配 %s= 形式
      */
@@ -1857,6 +1867,7 @@ class SVNAdmin
      */
     public function GetUserInfoHttp($passwdContent, $userName = '')
     {
+        $passwdContent = $this->NormalizeHttpPasswdContent($passwdContent);
         $passwdContent = trim($passwdContent);
         if (empty($passwdContent)) {
             return $userName == '' ? [] : 710;
@@ -1883,6 +1894,38 @@ class SVNAdmin
                 $result[] = $item;
             }
             return $userName == '' ? $result : (empty($result) ? 710 : $result[0]);
+        }
+    }
+
+    /**
+     * 删除指定用户 http
+     *
+     * @param string $passwdContent
+     * @param string $userName
+     * @param boolean $isDisabledUser
+     * @return string|int
+     *
+     * 710      用户不存在
+     * string   正常
+     */
+    public function DelUserFromHttpPasswd($passwdContent, $userName, $isDisabledUser = false)
+    {
+        $userName = trim($userName);
+        $passwdContent = $this->NormalizeHttpPasswdContent($passwdContent);
+        $passwdContent = trim($passwdContent);
+        if (empty($passwdContent)) {
+            return 710;
+        } else {
+            $userName = $isDisabledUser ? preg_quote($this->reg_1 . $userName) : preg_quote($userName);
+            preg_match_all(sprintf($this->reg_8, $userName), $passwdContent, $resultPreg);
+            if (preg_last_error() != 0) {
+                return preg_last_error();
+            }
+            if (array_key_exists(0, $resultPreg[0])) {
+                return trim(preg_replace(sprintf($this->reg_8, $userName), '', $passwdContent)) . "\n";
+            } else {
+                return 710;
+            }
         }
     }
 
@@ -1944,6 +1987,7 @@ class SVNAdmin
         $userName = trim($userName);
         $userName = $isDisabledUser ? ($this->reg_1 . $userName) : $userName;
 
+        $passwdContent = $this->NormalizeHttpPasswdContent($passwdContent);
         $passwdContent = trim($passwdContent);
         if (empty($passwdContent)) {
             return 710;
@@ -2015,6 +2059,7 @@ class SVNAdmin
     public function UpdUserStatusHttp($passwdContent, $userName, $disable = false)
     {
         $userName = trim($userName);
+        $passwdContent = $this->NormalizeHttpPasswdContent($passwdContent);
         $passwdContent = trim($passwdContent);
         if (empty($passwdContent)) {
             return 710;

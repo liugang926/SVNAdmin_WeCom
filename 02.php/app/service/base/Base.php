@@ -842,6 +842,7 @@ class Base
                     'disabled' => false,
                     'necessary_functions' => [
                         'Svnuser/UpdUserPass',
+                        'Svnuser/UpdUserInfo',
                     ],
                     'children' => []
                 ],
@@ -1565,6 +1566,7 @@ class Base
             'option_name' => '24_docker_host'
         ]);
         if (empty($dockerHost)) {
+            $this->svnDataSource = $this->NormalizeDataSource($this->svnDataSource, 'passwd');
             $this->database->insert('options', [
                 'option_value' => serialize([
                     'docker_host' => '127.0.0.1',
@@ -1672,7 +1674,9 @@ class Base
                     'group_search_filter' => '',
                     'group_attributes' => '',
                     'groups_to_user_attribute' => '',
-                    'groups_to_user_attribute_value' => ''
+                    'groups_to_user_attribute_value' => '',
+                    'group_nested_enabled' => true,
+                    'group_nested_max_depth' => 10
                 ]
             ];
             $this->database->insert('options', [
@@ -1680,7 +1684,7 @@ class Base
                 'option_value' => serialize($this->svnDataSource)
             ]);
         } else {
-            $this->svnDataSource = unserialize($result['option_value']);
+            $this->svnDataSource = $this->NormalizeDataSource(unserialize($result['option_value']), 'passwd');
         }
 
         //http
@@ -1712,15 +1716,18 @@ class Base
                     'group_search_filter' => '',
                     'group_attributes' => '',
                     'groups_to_user_attribute' => '',
-                    'groups_to_user_attribute_value' => ''
+                    'groups_to_user_attribute_value' => '',
+                    'group_nested_enabled' => true,
+                    'group_nested_max_depth' => 10
                 ]
             ];
+            $this->httpDataSource = $this->NormalizeDataSource($this->httpDataSource, 'httpPasswd');
             $this->database->insert('options', [
                 'option_name' => '24_http_datasource',
                 'option_value' => serialize($this->httpDataSource)
             ]);
         } else {
-            $this->httpDataSource = unserialize($result['option_value']);
+            $this->httpDataSource = $this->NormalizeDataSource(unserialize($result['option_value']), 'httpPasswd');
         }
 
         /**
@@ -1747,6 +1754,51 @@ class Base
     /**
      * 获取动态路由
      */
+    protected function NormalizeDataSource($dataSource, $defaultUserSource)
+    {
+        $default = [
+            'user_source' => $defaultUserSource,
+            'group_source' => 'authz',
+            'ldap' => [
+                'ldap_host' => 'ldap://127.0.0.1/',
+                'ldap_port' => 389,
+                'ldap_version' => 3,
+                'ldap_bind_dn' => '',
+                'ldap_bind_password' => '',
+
+                'user_base_dn' => '',
+                'user_search_filter' => '',
+                'user_attributes' => '',
+                'user_real_name_attribute' => 'cn',
+                'user_display_name_attribute' => 'displayName',
+                'user_mail_attribute' => 'mail',
+                'user_external_id_attribute' => 'uid',
+                'user_dn_attribute' => 'dn',
+
+                'group_base_dn' => '',
+                'group_search_filter' => '',
+                'group_attributes' => '',
+                'group_display_name_attribute' => 'description',
+                'group_external_id_attribute' => 'cn',
+                'group_dn_attribute' => 'dn',
+                'groups_to_user_attribute' => '',
+                'groups_to_user_attribute_value' => '',
+                'group_nested_enabled' => true,
+                'group_nested_max_depth' => 10
+            ]
+        ];
+
+        if (!is_array($dataSource)) {
+            return $default;
+        }
+
+        $ldap = isset($dataSource['ldap']) && is_array($dataSource['ldap']) ? $dataSource['ldap'] : [];
+        $dataSource = array_merge($default, $dataSource);
+        $dataSource['ldap'] = array_merge($default['ldap'], $ldap);
+
+        return $dataSource;
+    }
+
     public function GetDynamicRouting($userName, $userRole)
     {
         $route = $this->route;
@@ -1840,9 +1892,197 @@ class Base
      *
      * @return void
      */
+    protected function GetSvnObjectLookup()
+    {
+        $lookup = [
+            'user' => [],
+            'group' => [],
+            'aliase' => [],
+        ];
+
+        $users = $this->database->select('svn_users', [
+            'svn_user_name',
+            'svn_user_real_name',
+            'svn_user_display_name',
+            'svn_user_mail',
+            'svn_user_note',
+            'svn_user_source',
+        ]);
+        foreach ($users as $user) {
+            $userName = $user['svn_user_name'];
+            $display = $user['svn_user_display_name'] ?? '';
+            if ($display == '' || $display == $userName) {
+                $display = !empty($user['svn_user_real_name']) ? $user['svn_user_real_name'] : $userName;
+            }
+            $label = $display == $userName ? $userName : $display . ' (' . $userName . ')';
+            $lookup['user'][$userName] = [
+                'label' => $label,
+                'real_name' => $user['svn_user_real_name'] ?? '',
+                'display_name' => $user['svn_user_display_name'] ?? '',
+                'mail' => $user['svn_user_mail'] ?? '',
+                'note' => $user['svn_user_note'] ?? '',
+                'source' => $user['svn_user_source'] ?? '',
+            ];
+        }
+
+        $groups = $this->database->select('svn_groups', [
+            'svn_group_name',
+            'svn_group_display_name',
+            'svn_group_note',
+            'svn_group_source',
+        ]);
+        foreach ($groups as $group) {
+            $groupName = $group['svn_group_name'];
+            $display = !empty($group['svn_group_display_name']) ? $group['svn_group_display_name'] : $groupName;
+            $lookup['group'][$groupName] = [
+                'label' => $display == $groupName ? $groupName : $display . ' (' . $groupName . ')',
+                'display_name' => $display,
+                'note' => $group['svn_group_note'] ?? '',
+                'source' => $group['svn_group_source'] ?? '',
+            ];
+        }
+
+        $aliases = $this->SVNAdmin->GetAliaseInfo($this->authzContent);
+        if (!is_numeric($aliases)) {
+            foreach ($aliases as $alias) {
+                $aliasName = $alias['aliaseName'];
+                $aliasCon = $alias['aliaseCon'] ?? '';
+                $lookup['aliase'][$aliasName] = [
+                    'label' => $aliasCon == '' ? $aliasName : $aliasName . ' (' . $aliasCon . ')',
+                    'content' => $aliasCon,
+                ];
+            }
+        }
+
+        return $lookup;
+    }
+
+    protected function EnrichSvnObject($objectType, $objectName, $lookup = null, $row = [])
+    {
+        if ($lookup === null) {
+            $lookup = $this->GetSvnObjectLookup();
+        }
+
+        $row['objectType'] = $objectType;
+        $row['objectName'] = $objectName;
+        $row['objectLabel'] = $objectName;
+        $row['objectRealName'] = '';
+        $row['objectDisplayName'] = '';
+        $row['objectMail'] = '';
+        $row['objectNote'] = '';
+        $row['objectSource'] = '';
+        $row['objectSearchText'] = $objectType . ' ' . $objectName;
+
+        if ($objectType == 'user' && isset($lookup['user'][$objectName])) {
+            $meta = $lookup['user'][$objectName];
+            $row['objectLabel'] = $meta['label'];
+            $row['objectRealName'] = $meta['real_name'];
+            $row['objectDisplayName'] = $meta['display_name'];
+            $row['objectMail'] = $meta['mail'];
+            $row['objectNote'] = $meta['note'];
+            $row['objectSource'] = $meta['source'];
+            $row['objectSearchText'] = implode(' ', [
+                $objectType,
+                $objectName,
+                $meta['label'],
+                $meta['real_name'],
+                $meta['display_name'],
+                $meta['mail'],
+                $meta['note'],
+                $meta['source'],
+            ]);
+        } elseif ($objectType == 'group' && isset($lookup['group'][$objectName])) {
+            $meta = $lookup['group'][$objectName];
+            $row['objectLabel'] = $meta['label'];
+            $row['objectDisplayName'] = $meta['display_name'];
+            $row['objectNote'] = $meta['note'];
+            $row['objectSource'] = $meta['source'];
+            $row['objectSearchText'] = implode(' ', [
+                $objectType,
+                $objectName,
+                $meta['label'],
+                $meta['display_name'],
+                $meta['note'],
+                $meta['source'],
+            ]);
+        } elseif ($objectType == 'aliase' && isset($lookup['aliase'][$objectName])) {
+            $meta = $lookup['aliase'][$objectName];
+            $row['objectLabel'] = $meta['label'];
+            $row['objectNote'] = $meta['content'];
+            $row['objectSearchText'] = implode(' ', [
+                $objectType,
+                $objectName,
+                $meta['label'],
+                $meta['content'],
+            ]);
+        } elseif ($objectType == '*') {
+            $row['objectLabel'] = '*';
+            $row['objectSearchText'] = '* all';
+        } elseif ($objectType == '$authenticated') {
+            $row['objectLabel'] = '$authenticated';
+            $row['objectSearchText'] = '$authenticated authenticated';
+        } elseif ($objectType == '$anonymous') {
+            $row['objectLabel'] = '$anonymous';
+            $row['objectSearchText'] = '$anonymous anonymous';
+        }
+
+        return $row;
+    }
+
+    protected function EnrichSvnObjectList($rows)
+    {
+        $lookup = $this->GetSvnObjectLookup();
+        foreach ($rows as $key => $row) {
+            $rows[$key] = $this->EnrichSvnObject($row['objectType'], $row['objectName'], $lookup, $row);
+        }
+        return array_values($rows);
+    }
+
+    protected function FilterSvnObjectList($rows, $searchKeyword)
+    {
+        $searchKeyword = trim($searchKeyword);
+        if ($searchKeyword == '') {
+            return array_values($rows);
+        }
+
+        foreach ($rows as $key => $row) {
+            $searchText = $row['objectSearchText'] ?? ($row['objectName'] ?? '');
+            if (stripos($searchText, $searchKeyword) === false) {
+                unset($rows[$key]);
+            }
+        }
+
+        return array_values($rows);
+    }
+
     public function RereadAuthz()
     {
         $this->authzContent = file_get_contents($this->configSvn['svn_authz_file']);
+    }
+
+    protected function WriteAuthzFile($content)
+    {
+        $authzFile = $this->configSvn['svn_authz_file'];
+        $tmpFile = $authzFile . '.tmp.' . getmypid() . '.' . time();
+
+        if (@file_put_contents($tmpFile, $content) === false) {
+            return message(200, 0, sprintf('无法写入临时权限文件[%s]', $tmpFile));
+        }
+
+        if (isset($this->configBin['svnauthz-validate']) && is_executable($this->configBin['svnauthz-validate'])) {
+            $validate = funShellExec(sprintf("'%s' '%s'", $this->configBin['svnauthz-validate'], $tmpFile));
+            if ($validate['code'] != 0) {
+                @unlink($tmpFile);
+                $detail = trim($validate['error'] . "\n" . $validate['result']);
+                return message(200, 0, '权限文件格式校验失败: ' . $detail);
+            }
+        }
+
+        funFilePutContents($authzFile, $content);
+        @unlink($tmpFile);
+        $this->RereadAuthz();
+
+        return message();
     }
 
     /**
@@ -1895,7 +2135,7 @@ class Base
             'option_name' => '24_svn_datasource'
         ]);
 
-        $this->svnDataSource = unserialize($result['option_value']);
+        $this->svnDataSource = $this->NormalizeDataSource(unserialize($result['option_value']), 'passwd');
 
         //http
         $result = $this->database->get('options', [
@@ -1905,6 +2145,6 @@ class Base
             'option_name' => '24_http_datasource'
         ]);
 
-        $this->httpDataSource = unserialize($result['option_value']);
+        $this->httpDataSource = $this->NormalizeDataSource(unserialize($result['option_value']), 'httpPasswd');
     }
 }

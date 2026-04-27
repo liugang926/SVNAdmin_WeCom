@@ -1,7 +1,11 @@
 <template>
   <div>
     <Card :bordered="false" :dis-hover="true">
-      <Tabs v-model="curTabSettingAdvance" @on-click="SetCurrentAdvanceTab">
+      <Tabs
+        class="setting-tabs"
+        v-model="curTabSettingAdvance"
+        @on-click="SetCurrentAdvanceTab"
+      >
         <TabPane label="主机配置" name="1">
           <Card :bordered="false" :dis-hover="true" style="width: 620px">
             <Alert>该信息主要用于仓库检出地址的拼接</Alert>
@@ -372,13 +376,18 @@
             </Form>
             <Form :label-width="120" label-position="left">
               <!-- LDAP 服务器 -->
-              <span
-                v-if="
-                  formSvn.user_source == 'ldap' ||
-                  formSvn.group_source == 'ldap'
-                "
-              >
+              <span>
                 <Divider>LDAP 服务器</Divider>
+                <Alert
+                  v-if="
+                    formSvn.user_source != 'ldap' &&
+                    formSvn.group_source != 'ldap'
+                  "
+                  type="warning"
+                  show-icon
+                  >当前未启用 LDAP 来源，以下配置可预先维护，切换为 ldap
+                  来源并保存后生效。</Alert
+                >
                 <FormItem label="LDAP 主机地址">
                   <Row>
                     <Col span="12">
@@ -449,7 +458,7 @@
                 </FormItem>
               </span>
               <!-- LDAP 用户 -->
-              <span v-if="formSvn.user_source == 'ldap'">
+              <span>
                 <Divider>LDAP 用户</Divider>
                 <FormItem label="Base DN">
                   <Row>
@@ -515,9 +524,44 @@
                     </Col>
                   </Row>
                 </FormItem>
+                <FormItem label="姓名字段">
+                  <Row>
+                    <Col span="12">
+                      <Input v-model="formSvn.ldap.user_real_name_attribute" placeholder="cn"></Input>
+                    </Col>
+                  </Row>
+                </FormItem>
+                <FormItem label="显示名字段">
+                  <Row>
+                    <Col span="12">
+                      <Input v-model="formSvn.ldap.user_display_name_attribute" placeholder="displayName"></Input>
+                    </Col>
+                  </Row>
+                </FormItem>
+                <FormItem label="邮箱字段">
+                  <Row>
+                    <Col span="12">
+                      <Input v-model="formSvn.ldap.user_mail_attribute" placeholder="mail"></Input>
+                    </Col>
+                  </Row>
+                </FormItem>
+                <FormItem label="唯一标识字段">
+                  <Row>
+                    <Col span="12">
+                      <Input v-model="formSvn.ldap.user_external_id_attribute" placeholder="uid"></Input>
+                    </Col>
+                  </Row>
+                </FormItem>
+                <FormItem label="DN字段">
+                  <Row>
+                    <Col span="12">
+                      <Input v-model="formSvn.ldap.user_dn_attribute" placeholder="dn"></Input>
+                    </Col>
+                  </Row>
+                </FormItem>
               </span>
               <!-- LDAP 分组 -->
-              <span v-if="formSvn.group_source == 'ldap'">
+              <span>
                 <Divider>LDAP 分组</Divider>
                 <FormItem label="Base DN">
                   <Row>
@@ -567,6 +611,27 @@
                       >
                         <Button type="info">说明</Button>
                       </Tooltip>
+                    </Col>
+                  </Row>
+                </FormItem>
+                <FormItem label="分组显示名字段">
+                  <Row>
+                    <Col span="12">
+                      <Input v-model="formSvn.ldap.group_display_name_attribute" placeholder="description"></Input>
+                    </Col>
+                  </Row>
+                </FormItem>
+                <FormItem label="分组唯一标识字段">
+                  <Row>
+                    <Col span="12">
+                      <Input v-model="formSvn.ldap.group_external_id_attribute" placeholder="cn"></Input>
+                    </Col>
+                  </Row>
+                </FormItem>
+                <FormItem label="分组DN字段">
+                  <Row>
+                    <Col span="12">
+                      <Input v-model="formSvn.ldap.group_dn_attribute" placeholder="dn"></Input>
                     </Col>
                   </Row>
                 </FormItem>
@@ -623,6 +688,40 @@
                 </FormItem>
               </span>
               <!-- 保存 -->
+              <FormItem label="嵌套组同步">
+                <Row>
+                  <Col span="12">
+                    <i-switch
+                      v-model="formSvn.ldap.group_nested_enabled"
+                      size="large"
+                    >
+                      <span slot="open">启用</span>
+                      <span slot="close">关闭</span>
+                    </i-switch>
+                  </Col>
+                  <Col span="1"> </Col>
+                  <Col span="8">
+                    <Tooltip
+                      :transfer="true"
+                      max-width="280"
+                      content="启用后，LDAP 组中包含子组时，会递归展开子组里的用户写入 SVN 权限分组。"
+                    >
+                      <Button type="info">说明</Button>
+                    </Tooltip>
+                  </Col>
+                </Row>
+              </FormItem>
+              <FormItem label="最大递归深度">
+                <Row>
+                  <Col span="12">
+                    <InputNumber
+                      :min="1"
+                      :max="50"
+                      v-model="formSvn.ldap.group_nested_max_depth"
+                    ></InputNumber>
+                  </Col>
+                </Row>
+              </FormItem>
               <FormItem>
                 <Button
                   type="primary"
@@ -831,13 +930,18 @@
             </Form>
             <Form :label-width="120" label-position="left">
               <!-- LDAP 服务器 -->
-              <span
-                v-if="
-                  formHttp.user_source == 'ldap' ||
-                  formHttp.group_source == 'ldap'
-                "
-              >
+              <span>
                 <Divider>LDAP 服务器</Divider>
+                <Alert
+                  v-if="
+                    formHttp.user_source != 'ldap' &&
+                    formHttp.group_source != 'ldap'
+                  "
+                  type="warning"
+                  show-icon
+                  >当前未启用 LDAP 来源，以下配置可预先维护，切换为 ldap
+                  来源并保存后生效。</Alert
+                >
                 <FormItem label="LDAP 主机地址">
                   <Row>
                     <Col span="12">
@@ -908,7 +1012,7 @@
                 </FormItem>
               </span>
               <!-- LDAP 用户 -->
-              <span v-if="formHttp.user_source == 'ldap'">
+              <span>
                 <Divider>LDAP 用户</Divider>
                 <FormItem label="Base DN">
                   <Row>
@@ -974,9 +1078,44 @@
                     </Col>
                   </Row>
                 </FormItem>
+                <FormItem label="姓名字段">
+                  <Row>
+                    <Col span="12">
+                      <Input v-model="formHttp.ldap.user_real_name_attribute" placeholder="cn"></Input>
+                    </Col>
+                  </Row>
+                </FormItem>
+                <FormItem label="显示名字段">
+                  <Row>
+                    <Col span="12">
+                      <Input v-model="formHttp.ldap.user_display_name_attribute" placeholder="displayName"></Input>
+                    </Col>
+                  </Row>
+                </FormItem>
+                <FormItem label="邮箱字段">
+                  <Row>
+                    <Col span="12">
+                      <Input v-model="formHttp.ldap.user_mail_attribute" placeholder="mail"></Input>
+                    </Col>
+                  </Row>
+                </FormItem>
+                <FormItem label="唯一标识字段">
+                  <Row>
+                    <Col span="12">
+                      <Input v-model="formHttp.ldap.user_external_id_attribute" placeholder="uid"></Input>
+                    </Col>
+                  </Row>
+                </FormItem>
+                <FormItem label="DN字段">
+                  <Row>
+                    <Col span="12">
+                      <Input v-model="formHttp.ldap.user_dn_attribute" placeholder="dn"></Input>
+                    </Col>
+                  </Row>
+                </FormItem>
               </span>
               <!-- LDAP 分组 -->
-              <span v-if="formHttp.group_source == 'ldap'">
+              <span>
                 <Divider>LDAP 分组</Divider>
                 <FormItem label="Base DN">
                   <Row>
@@ -1031,6 +1170,27 @@
                     </Col>
                   </Row>
                 </FormItem>
+                <FormItem label="分组显示名字段">
+                  <Row>
+                    <Col span="12">
+                      <Input v-model="formHttp.ldap.group_display_name_attribute" placeholder="description"></Input>
+                    </Col>
+                  </Row>
+                </FormItem>
+                <FormItem label="分组唯一标识字段">
+                  <Row>
+                    <Col span="12">
+                      <Input v-model="formHttp.ldap.group_external_id_attribute" placeholder="cn"></Input>
+                    </Col>
+                  </Row>
+                </FormItem>
+                <FormItem label="分组DN字段">
+                  <Row>
+                    <Col span="12">
+                      <Input v-model="formHttp.ldap.group_dn_attribute" placeholder="dn"></Input>
+                    </Col>
+                  </Row>
+                </FormItem>
                 <FormItem label="Groups to user attribute">
                   <Row>
                     <Col span="12">
@@ -1079,6 +1239,40 @@
                           >
                         </Col>
                       </Row>
+                    </Col>
+                  </Row>
+                </FormItem>
+                <FormItem label="嵌套组同步">
+                  <Row>
+                    <Col span="12">
+                      <i-switch
+                        v-model="formHttp.ldap.group_nested_enabled"
+                        size="large"
+                      >
+                        <span slot="open">启用</span>
+                        <span slot="close">关闭</span>
+                      </i-switch>
+                    </Col>
+                    <Col span="1"> </Col>
+                    <Col span="8">
+                      <Tooltip
+                        :transfer="true"
+                        max-width="280"
+                        content="启用后，LDAP 组中包含子组时，会递归展开子组里的用户写入 SVN 权限分组。"
+                      >
+                        <Button type="info">说明</Button>
+                      </Tooltip>
+                    </Col>
+                  </Row>
+                </FormItem>
+                <FormItem label="最大递归深度">
+                  <Row>
+                    <Col span="12">
+                      <InputNumber
+                        :min="1"
+                        :max="50"
+                        v-model="formHttp.ldap.group_nested_max_depth"
+                      ></InputNumber>
                     </Col>
                   </Row>
                 </FormItem>
@@ -1682,13 +1876,23 @@ export default {
           user_base_dn: "",
           user_search_filter: "",
           user_attributes: "",
+          user_real_name_attribute: "cn",
+          user_display_name_attribute: "displayName",
+          user_mail_attribute: "mail",
+          user_external_id_attribute: "uid",
+          user_dn_attribute: "dn",
 
           //分组相关
           group_base_dn: "",
           group_search_filter: "",
           group_attributes: "",
+          group_display_name_attribute: "description",
+          group_external_id_attribute: "cn",
+          group_dn_attribute: "dn",
           groups_to_user_attribute: "",
           groups_to_user_attribute_value: "",
+          group_nested_enabled: true,
+          group_nested_max_depth: 10,
         },
       },
 
@@ -1791,13 +1995,23 @@ export default {
           user_base_dn: "",
           user_search_filter: "",
           user_attributes: "",
+          user_real_name_attribute: "cn",
+          user_display_name_attribute: "displayName",
+          user_mail_attribute: "mail",
+          user_external_id_attribute: "uid",
+          user_dn_attribute: "dn",
 
           //分组相关
           group_base_dn: "",
           group_search_filter: "",
           group_attributes: "",
+          group_display_name_attribute: "description",
+          group_external_id_attribute: "cn",
+          group_dn_attribute: "dn",
           groups_to_user_attribute: "",
           groups_to_user_attribute_value: "",
+          group_nested_enabled: true,
+          group_nested_max_depth: 10,
         },
       },
     };
@@ -2740,5 +2954,47 @@ export default {
 };
 </script>
 
-<style >
+<style>
+.setting-tabs > .ivu-tabs-bar .ivu-tabs-nav-container {
+  height: auto;
+  overflow: visible;
+  white-space: normal;
+}
+
+.setting-tabs > .ivu-tabs-bar .ivu-tabs-nav-wrap {
+  margin-bottom: 0;
+  overflow: visible;
+}
+
+.setting-tabs > .ivu-tabs-bar .ivu-tabs-nav-scroll {
+  overflow: visible;
+}
+
+.setting-tabs > .ivu-tabs-bar .ivu-tabs-nav {
+  display: flex;
+  flex-wrap: wrap;
+  float: none;
+  transform: translate3d(0, 0, 0) !important;
+}
+
+.setting-tabs > .ivu-tabs-bar .ivu-tabs-tab {
+  flex: 0 0 auto;
+  margin: 0 22px 8px 0;
+  padding: 8px 0;
+}
+
+.setting-tabs > .ivu-tabs-bar .ivu-tabs-tab-active {
+  border-bottom: 2px solid #2d8cf0;
+}
+
+.setting-tabs > .ivu-tabs-bar .ivu-tabs-ink-bar,
+.setting-tabs > .ivu-tabs-bar .ivu-tabs-nav-next,
+.setting-tabs > .ivu-tabs-bar .ivu-tabs-nav-prev {
+  display: none;
+}
+
+.setting-tabs > .ivu-tabs-content > .ivu-tabs-tabpane > .ivu-card {
+  width: 100% !important;
+  max-width: 720px;
+}
 </style>

@@ -27,6 +27,12 @@ class Svnuser extends Base
         $this->ServiceSvnuser = new ServiceSvnuser($parm);
     }
 
+    public function UpdUserInfo()
+    {
+        $result = $this->ServiceSvnuser->UpdUserInfo();
+        json2($result);
+    }
+
     /**
      * 获取带有分页的SVN用户
      * 

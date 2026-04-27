@@ -89,7 +89,7 @@ class Svn extends Base
             return message($checkResult['code'], $checkResult['status'], $checkResult['message'] . ': ' . $checkResult['data']['column']);
         }
 
-        $dataSource = $this->payload['data_source'];
+        $dataSource = $this->NormalizeDataSource($this->payload['data_source'], 'passwd');
 
         if ($dataSource['user_source'] == 'ldap') {
 

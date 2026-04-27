@@ -98,7 +98,7 @@
 
       <!-- 搜索过滤 -->
       <Row :gutter="16" style="margin-bottom: 16px;">
-        <Col span="6">
+        <Col span="5">
           <Input 
             v-model="searchFilters.wecom_name" 
             placeholder="企业微信姓名"
@@ -106,7 +106,7 @@
             clearable
           />
         </Col>
-        <Col span="6">
+        <Col span="5">
           <Input 
             v-model="searchFilters.wecom_userid" 
             placeholder="企业微信用户ID"
@@ -114,7 +114,15 @@
             clearable
           />
         </Col>
-        <Col span="6">
+        <Col span="5">
+          <Input
+            v-model="searchFilters.svn_keyword"
+            placeholder="SVN用户名、姓名、显示名、邮箱"
+            @on-enter="loadMappings"
+            clearable
+          />
+        </Col>
+        <Col span="5">
           <Select 
             v-model="searchFilters.mapping_status" 
             placeholder="映射状态"
@@ -126,7 +134,7 @@
             <Option value="conflict">冲突</Option>
           </Select>
         </Col>
-        <Col span="6">
+        <Col span="4">
           <Button type="primary" @click="loadMappings" long>
             <Icon type="ios-search"/>
             搜索
@@ -160,9 +168,11 @@
 
         <template slot-scope="{ row }" slot="svn_info">
           <div v-if="row.svn_user_name">
-            <strong>{{ row.svn_user_name }}</strong>
+            <strong>{{ row.svn_user_label || row.svn_user_name }}</strong>
             <br/>
-            <span style="color: #80848f; font-size: 12px;">{{ row.svn_user_note || '无备注' }}</span>
+            <span style="color: #80848f; font-size: 12px;">{{ row.svn_user_mail || row.svn_user_note || '无备注' }}</span>
+            <br v-if="row.svn_user_mail && row.svn_user_note"/>
+            <span v-if="row.svn_user_mail && row.svn_user_note" style="color: #80848f; font-size: 12px;">{{ row.svn_user_note }}</span>
           </div>
           <div v-else style="color: #c5c8ce;">
             <Icon type="ios-close-circle"/>
@@ -280,7 +290,8 @@
                 :key="user.svn_user_id" 
                 :value="user.svn_user_id"
               >
-                {{ user.svn_user_name }} ({{ user.svn_user_note || '无备注' }})
+                {{ user.svn_user_label || user.svn_user_name }}
+                <span style="color: #80848f;">{{ user.svn_user_mail || user.svn_user_note ? ' - ' + (user.svn_user_mail || user.svn_user_note) : '' }}</span>
               </Option>
             </Select>
           </FormItem>
@@ -376,6 +387,7 @@ export default {
       searchFilters: {
         wecom_name: '',
         wecom_userid: '',
+        svn_keyword: '',
         mapping_status: ''
       },
 
@@ -446,7 +458,7 @@ export default {
         {
           title: 'SVN 用户',
           slot: 'svn_info',
-          width: 180
+          width: 240
         },
         {
           title: '所属部门',
@@ -503,6 +515,20 @@ export default {
       const n = parseInt(value, 10)
       return isFinite(n) && n > 0 ? n : 0
     },
+    normalizeSvnUserLabel(user) {
+      if (!user || !user.svn_user_name) return ''
+      if (user.svn_user_label) return user.svn_user_label
+      const userName = user.svn_user_name
+      const displayName = user.svn_user_display_name || ''
+      const realName = user.svn_user_real_name || ''
+      const labelName = displayName && displayName !== userName ? displayName : (realName || userName)
+      return labelName === userName ? userName : `${labelName} (${userName})`
+    },
+    includesKeyword(values, keyword) {
+      const needle = String(keyword || '').trim().toLowerCase()
+      if (!needle) return true
+      return values.some(value => String(value || '').toLowerCase().includes(needle))
+    },
     /**
      * 更新映射统计数据
      */
@@ -553,6 +579,7 @@ export default {
           console.log('开始处理用户数据，用户数量:', data.users ? data.users.length : 0)
           let processedUsers = data.users.map(user => ({
             ...user,
+            svn_user_label: this.normalizeSvnUserLabel(user),
             mapping_status: user.svn_user_name ? 'mapped' : 'unmapped',
             departments: this.parseDepartments(user.wecom_department_ids)
           }))
@@ -583,6 +610,21 @@ export default {
               user.wecom_userid && user.wecom_userid.toLowerCase().includes(this.searchFilters.wecom_userid.toLowerCase())
             )
             console.log(`用户ID筛选: ${beforeIdFilter} -> ${processedUsers.length}`)
+          }
+
+          if (this.searchFilters.svn_keyword) {
+            const beforeSvnFilter = processedUsers.length
+            processedUsers = processedUsers.filter(user =>
+              this.includesKeyword([
+                user.svn_user_name,
+                user.svn_user_real_name,
+                user.svn_user_display_name,
+                user.svn_user_label,
+                user.svn_user_mail,
+                user.svn_user_note
+              ], this.searchFilters.svn_keyword)
+            )
+            console.log(`SVN用户筛选: ${beforeSvnFilter} -> ${processedUsers.length}`)
           }
           
           this.userMappings = processedUsers
@@ -660,11 +702,20 @@ export default {
       this.currentUser = user
       this.mappingType = user.svn_user_name ? 'existing' : 'existing'
       this.mappingForm = {
-        svn_user_id: user.svn_user_name ? 1 : null, // 临时设置，实际应该从用户数据获取
+        svn_user_id: user.svn_user_id || null,
         new_username: '',
         new_password: '',
         new_note: user.wecom_name
       }
+      this.svnUsers = user.svn_user_name ? [{
+        svn_user_id: user.svn_user_id,
+        svn_user_name: user.svn_user_name,
+        svn_user_real_name: user.svn_user_real_name,
+        svn_user_display_name: user.svn_user_display_name,
+        svn_user_mail: user.svn_user_mail,
+        svn_user_note: user.svn_user_note,
+        svn_user_label: this.normalizeSvnUserLabel(user)
+      }] : []
       this.mappingModalVisible = true
     },
 
@@ -692,17 +743,28 @@ export default {
       this.svnUsersLoading = true
       
       try {
-        // 这里应该调用搜索 SVN 用户的接口
-        // 暂时返回模拟数据
-        this.svnUsers = [
-          { svn_user_id: 1, svn_user_name: 'user1', svn_user_note: '用户1' },
-          { svn_user_id: 2, svn_user_name: 'user2', svn_user_note: '用户2' }
-        ].filter(user => 
-          user.svn_user_name.includes(query) || 
-          (user.svn_user_note && user.svn_user_note.includes(query))
-        )
+        const response = await this.$axios.post('api.php?c=Svnuser&a=GetUserList&t=web', {
+          pageSize: 20,
+          currentPage: 1,
+          searchKeyword: query,
+          sortName: 'svn_user_name',
+          sortType: 'asc',
+          sync: false,
+          page: true
+        })
+        if (response.data.status === 1) {
+          const users = response.data.data && response.data.data.data ? response.data.data.data : []
+          this.svnUsers = users.map(user => ({
+            ...user,
+            svn_user_label: this.normalizeSvnUserLabel(user)
+          }))
+        } else {
+          this.$Message.error(response.data.message)
+          this.svnUsers = []
+        }
       } catch (error) {
         console.error('搜索 SVN 用户失败:', error)
+        this.svnUsers = []
       } finally {
         this.svnUsersLoading = false
       }

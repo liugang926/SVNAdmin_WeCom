@@ -84,16 +84,8 @@ class Secondpri extends Base
         ]);
 
         //过滤
-        if (!empty($searchKeyword)) {
-            foreach ($result as $key => $value) {
-                if (
-                    strstr($value['svn_object_name'], $searchKeyword) === false
-                ) {
-                    unset($result[$key]);
-                }
-            }
-            $result = array_values($result);
-        }
+        $result = $this->EnrichSvnObjectList($result);
+        $result = $this->FilterSvnObjectList($result, $searchKeyword);
 
         return message(200, 1, '成功', $result);
     }

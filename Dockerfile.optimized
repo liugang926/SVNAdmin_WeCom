@@ -61,6 +61,10 @@ RUN echo "Installing Apache and base packages..." && \
         cyrus-sasl cyrus-sasl-lib cyrus-sasl-plain && \
     yum clean all
 
+# Remi is only needed for PHP installation. Disable it afterwards so later yum
+# operations are not blocked by transient Remi mirrorlist failures.
+RUN yum-config-manager --disable remi-safe remi-php72 || true
+
 # 安装 Subversion 1.14.3（最新稳定版本）
 RUN echo "Installing Subversion 1.14.3 from WANdisco repository..." && \
     # 添加 WANdisco SVN 1.14 仓库
@@ -68,9 +72,9 @@ RUN echo "Installing Subversion 1.14.3 from WANdisco repository..." && \
 [WANdisco-svn]
 name=WANdisco SVN Repo 1.14
 enabled=1
-baseurl=http://opensource.wandisco.com/centos/7/svn-1.14/RPMS/$basearch/
+baseurl=https://opensource.blueoptima.com/centos/7/svn-1.14/RPMS/$basearch/
 gpgcheck=1
-gpgkey=http://opensource.wandisco.com/RPM-GPG-KEY-WANdisco
+gpgkey=https://opensource.blueoptima.com/RPM-GPG-KEY-WANdisco
 EOF
 
 # 安装 SVN 1.14 和 Apache SVN 模块
@@ -82,12 +86,17 @@ RUN yum install -y subversion subversion-tools mod_dav_svn && \
     # 创建 svn-tools 目录和兼容性链接
     mkdir -p /usr/bin/svn-tools && \
     # SVN 1.14 中 svnauthz-validate 功能已集成到 svnauthz
-    if [ -f /usr/bin/svnauthz ]; then \
+    if [ -f /usr/bin/svn-tools/svnauthz ]; then \
+        ln -sf /usr/bin/svn-tools/svnauthz /usr/bin/svnauthz && \
+        ln -sf /usr/bin/svn-tools/svnauthz-validate /usr/bin/svnauthz-validate && \
+        echo "Created compatibility links for svnauthz"; \
+    elif [ -f /usr/bin/svnauthz ]; then \
+        mkdir -p /usr/bin/svn-tools && \
         ln -sf /usr/bin/svnauthz /usr/bin/svn-tools/svnauthz && \
         ln -sf /usr/bin/svnauthz /usr/bin/svn-tools/svnauthz-validate && \
         echo "Created compatibility links for svnauthz"; \
     else \
-        echo "Warning: svnauthz not found in /usr/bin"; \
+        echo "Warning: svnauthz not found"; \
     fi
 
 # 配置 Apache（保持原项目简洁配置 + 正确的中文支持）
@@ -109,8 +118,12 @@ RUN sed -i 's/#ServerName www.example.com:80/ServerName localhost:80/' /etc/http
 
 # 不创建静态SVN配置，让SVNAdmin动态管理
 # 只确保SVN模块可用
-RUN echo "LoadModule dav_svn_module modules/mod_dav_svn.so" > /etc/httpd/conf.d/00-svn-modules.conf && \
-    echo "LoadModule authz_svn_module modules/mod_authz_svn.so" >> /etc/httpd/conf.d/00-svn-modules.conf
+RUN if grep -R "dav_svn_module" /etc/httpd/conf* >/dev/null 2>&1; then \
+        echo "SVN Apache modules already configured"; \
+    else \
+        echo "LoadModule dav_svn_module modules/mod_dav_svn.so" > /etc/httpd/conf.d/00-svn-modules.conf && \
+        echo "LoadModule authz_svn_module modules/mod_authz_svn.so" >> /etc/httpd/conf.d/00-svn-modules.conf; \
+    fi
 
 # 配置 PHP（检查文件是否存在）
 RUN echo "Configuring PHP..." && \
@@ -169,43 +182,18 @@ RUN echo "Creating standard directory structure..." && \
 # SVN工具链接已在SVN安装步骤中创建
 
 # 安装Node.js和npm（用于Vue前端构建）
-RUN echo "Installing Node.js and npm..." && \
-    curl -fsSL https://rpm.nodesource.com/setup_16.x | bash - && \
-    yum install -y nodejs && \
-    node --version && \
-    npm --version && \
-    echo "Node.js and npm installation completed"
 
 # 复制项目文件
-COPY data/ /home/svnadmin/
+COPY 03.cicd/svnadmin_docker/data/ /home/svnadmin/
+COPY 03.cicd/svnadmin_docker/data/ /opt/svnadmin/default-data/
 COPY 02.php/ /var/www/html/
 COPY 04.update/ /var/www/html/04.update/
+COPY scripts/ /var/www/html/scripts/
 
 # 在容器中构建Vue前端（推荐做法）
-COPY 01.web/package.json /tmp/svnadmin_web/
-RUN cd /tmp/svnadmin_web && \
-    rm -f package-lock.json && \
-    npm config set registry https://registry.npmmirror.com && \
-    npm config set progress false && \
-    npm config set audit false && \
-    npm install --no-audit --no-fund --legacy-peer-deps --unsafe-perm --timeout=300000
-
-COPY 01.web/ /tmp/svnadmin_web/
-RUN cd /tmp/svnadmin_web && \
-    echo "Pin webpack 2.x toolchain..." && \
-    npm rm -D webpack-cli || true && \
-    npm install -D --no-audit --no-fund --legacy-peer-deps --unsafe-perm --timeout=300000 \
-      webpack@2.7.0 webpack-dev-server@2.4.1 \
-      extract-text-webpack-plugin@2.0.0 html-webpack-plugin@2.28.0 \
-      babel-loader@6.4.1 webpack-merge@3.0.0 && \
-    echo "Building frontend in container..." && \
-    NODE_ENV=production npm run build && \
-    echo "Cleaning old frontend files from web directory..." && \
-    rm -f /var/www/html/*.js /var/www/html/*.css 2>/dev/null || true && \
-    echo "Copying built frontend files to web directory..." && \
-    cp dist/*.js dist/*.css dist/*.png dist/*.svg dist/*.woff* dist/*.ttf dist/index.html /var/www/html/ 2>/dev/null || true && \
-    echo "Frontend build completed successfully" && \
-    rm -rf /tmp/svnadmin_web
+COPY 01.web/dist/ /var/www/html/
+RUN test -f /var/www/html/index.html && \
+    echo "Pre-built frontend files copied successfully"
 
 # 创建完整的SVN工作目录结构并复制配置文件
 RUN echo "Creating SVN directory structure..." && \
@@ -255,7 +243,8 @@ COPY 03.cicd/svnadmin_docker/hook_manager.sh /root/hook_manager.sh
 COPY 03.cicd/svnadmin_docker/db_auto_init.sh /root/db_auto_init.sh
 
 # 设置权限（与原项目完全一致）
-RUN chown -R apache:apache /home/svnadmin/ && \
+RUN sed -i 's/\r$//' /root/start.sh /root/hook_manager.sh /root/db_auto_init.sh && \
+    chown -R apache:apache /home/svnadmin/ && \
     chown -R apache:apache /var/www/html/ && \
     chmod -R 755 /var/www/html && \
     chmod -R 777 /var/www/html/logs && \
