@@ -2,6 +2,11 @@
 
 本项目基于 [witersen/SvnAdminV2.0](https://github.com/witersen/SvnAdminV2.0) 做企业场景增强，重点补充 Docker 部署、企业微信集成、LDAP 用户/分组同步、姓名字段、仓库权限管理一致性以及升级迁移能力。
 
+## 联系方式
+
+原项目Q群：633108141
+关注微信公众号：大刘讲IT
+
 ## 功能概览
 
 - SVN 仓库、用户、分组、路径权限的 Web 管理。
@@ -141,6 +146,7 @@ php scripts/preflight.php
 - 本地用户/分组由 SVNAdmin 手工维护。
 - LDAP 用户/分组由同步任务维护，不在 Web 页面中手工覆盖来源字段。
 - LDAP 分组允许同步嵌套成员关系，展开后的成员写入 SVNAdmin 分组成员关系。
+- LDAP 分组同步会检测与手工分组同名的冲突；发现冲突时会中止同步并返回冲突分组名，避免 LDAP 成员和手工成员被静默合并。
 - 授权页面只消费当前已同步完成的用户和分组快照，避免授权时临时查询 LDAP 造成结果不一致。
 
 常用 LDAP 字段映射建议：
@@ -157,6 +163,8 @@ php scripts/preflight.php
 | 分组成员 | `member`、`uniqueMember`、`memberUid` |
 
 如果企业目录使用嵌套组，建议先在测试环境验证最大递归深度、循环引用处理和成员去重效果，再切换生产同步。
+
+如果 LDAP 分组名与手工分组名重复，建议优先采用统一命名策略，例如给本地手工分组加 `local-` 前缀，或在 LDAP 分组字段映射中使用不会与本地分组冲突的属性。处理完冲突后再重新执行分组同步。
 
 ## 项目结构
 
@@ -196,6 +204,10 @@ docker exec svnadmin-local-optimized php /var/www/html/scripts/preflight.php
 ### 用户或分组列表为空
 
 先确认 `passwd`、`authz`、`svnadmin.db` 是否一致，再执行同步列表或迁移脚本。升级后用户列表会以数据库快照为准，同时保留从 `passwd` 同步出的账号信息。
+
+### LDAP 分组同步提示名称冲突
+
+这表示 LDAP 返回的分组名与 SVNAdmin 手工分组名相同。系统会阻止本次同步，避免两个来源的成员被写入同一个 authz 分组。请重命名手工分组，或调整 LDAP 分组名称映射后重新同步。
 
 ### Docker 无法启动或无法连接
 

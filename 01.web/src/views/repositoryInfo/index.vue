@@ -1699,12 +1699,7 @@ export default {
           that.noDataTextRepCon =
             "由于svnserve服务未启动，SVN用户只能复制检出地址而不能进行仓库内容浏览";
           //更新检出地址
-          that.tempCheckout =
-            that.checkInfo.protocal +
-            that.checkInfo.prefix +
-            "/" +
-            that.currentRepName +
-            that.currentRepPath;
+          that.tempCheckout = that.BuildCheckoutUrl();
         }
       });
     },
@@ -1712,7 +1707,7 @@ export default {
      * 用户通过http提供的能力直接浏览
      */
     ModalViewUserRepRaw(row_url) {
-      window.open(row_url, "_blank");
+      window.open(this.ResolveCheckoutUrl(row_url), "_blank");
     },
     /**
      * 获取检出地址前缀
@@ -1749,6 +1744,101 @@ export default {
       });
     },
     /**
+     * 使用当前访问主机修正浏览/复制地址中的本机地址
+     */
+    IsLocalCheckoutHost(host) {
+      return (
+        host == "localhost" ||
+        host == "0.0.0.0" ||
+        host == "::1" ||
+        host == "[::1]" ||
+        /^127\./.test(host)
+      );
+    },
+    ResolveCheckoutProtocol(protocol, prefix) {
+      var originalProtocol = protocol || "";
+      if (
+        typeof window === "undefined" ||
+        originalProtocol.indexOf("http") !== 0 ||
+        !/^https?:$/.test(window.location.protocol)
+      ) {
+        return originalProtocol;
+      }
+
+      try {
+        var url = new URL(originalProtocol + String(prefix || ""));
+        return this.IsLocalCheckoutHost(url.hostname)
+          ? window.location.protocol + "//"
+          : originalProtocol;
+      } catch (e) {
+        return originalProtocol;
+      }
+    },
+    ResolveCheckoutPrefix(protocol, prefix) {
+      var originalPrefix = String(prefix || "");
+      if (typeof window === "undefined" || originalPrefix == "") {
+        return originalPrefix;
+      }
+
+      try {
+        var url = new URL((protocol || "http://") + originalPrefix);
+        if (!this.IsLocalCheckoutHost(url.hostname)) {
+          return originalPrefix;
+        }
+
+        var pathPrefix = url.pathname == "/" ? "" : url.pathname.replace(/\/+$/, "");
+        if ((protocol || "").indexOf("http") === 0) {
+          return window.location.host + pathPrefix;
+        }
+
+        var browserHost = window.location.hostname;
+        if (browserHost.indexOf(":") >= 0 && browserHost.charAt(0) != "[") {
+          browserHost = "[" + browserHost + "]";
+        }
+        return browserHost + (url.port ? ":" + url.port : "") + pathPrefix;
+      } catch (e) {
+        return originalPrefix;
+      }
+    },
+    ResolveCheckoutUrl(checkoutUrl) {
+      var originalUrl = String(checkoutUrl || "");
+      if (typeof window === "undefined" || originalUrl == "") {
+        return originalUrl;
+      }
+
+      try {
+        var url = new URL(originalUrl);
+        if (!this.IsLocalCheckoutHost(url.hostname)) {
+          return originalUrl;
+        }
+
+        var protocol = url.protocol + "//";
+        var prefix = url.host + url.pathname;
+        return (
+          this.ResolveCheckoutProtocol(protocol, prefix) +
+          this.ResolveCheckoutPrefix(protocol, prefix).replace(/\/+$/, "") +
+          url.search +
+          url.hash
+        );
+      } catch (e) {
+        return originalUrl;
+      }
+    },
+    BuildCheckoutUrl() {
+      var rawProtocol = (this.checkInfo && this.checkInfo.protocal) || "";
+      var rawPrefix = (this.checkInfo && this.checkInfo.prefix) || "";
+      var protocol = this.ResolveCheckoutProtocol(rawProtocol, rawPrefix);
+      var prefix = this.ResolveCheckoutPrefix(
+        rawProtocol,
+        rawPrefix
+      ).replace(/\/+$/, "");
+      var repPath = this.currentRepPath || "/";
+      if (repPath.charAt(0) != "/") {
+        repPath = "/" + repPath;
+      }
+      return protocol + prefix + "/" + this.currentRepName + repPath;
+    },
+    /**
      * 获取仓库内容
      */
     GetRepCon() {
@@ -1767,12 +1857,7 @@ export default {
             that.tableDataRepCon = result.data.data;
             that.breadRepPath = result.data.bread;
             //更新检出地址
-            that.tempCheckout =
-              that.checkInfo.protocal +
-              that.checkInfo.prefix +
-              "/" +
-              that.currentRepName +
-              that.currentRepPath;
+            that.tempCheckout = that.BuildCheckoutUrl();
           } else {
             that.$Message.error({ content: result.message, duration: 2 });
           }
@@ -1802,12 +1887,7 @@ export default {
             that.tableDataRepCon = result.data.data;
             that.breadRepPath = result.data.bread;
             //更新检出地址
-            that.tempCheckout =
-              that.checkInfo.protocal +
-              that.checkInfo.prefix +
-              "/" +
-              that.currentRepName +
-              that.currentRepPath;
+            that.tempCheckout = that.BuildCheckoutUrl();
           } else {
             that.$Message.error({ content: result.message, duration: 2 });
           }

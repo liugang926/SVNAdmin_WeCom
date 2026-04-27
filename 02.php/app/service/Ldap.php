@@ -963,6 +963,15 @@ class Ldap extends Base
 
         $membershipIndex = $this->buildLdapMembershipIndex($users, $groups, $dataSource);
         $groupDetails = $this->buildLdapGroupDetails($groups, $dataSource, $groupNameAttribute);
+        $ldapGroupNames = array_keys($membershipIndex['validGroupNames']);
+        $conflictGroupNames = array_values(array_intersect($dbManualGroupNames, $ldapGroupNames));
+        if (!empty($conflictGroupNames)) {
+            sort($conflictGroupNames, SORT_NATURAL);
+            return message(200, 0, 'LDAP分组与手工分组名称冲突：' . implode('、', $conflictGroupNames) . '。请先重命名手工分组，或调整LDAP分组映射后再同步。', [
+                'conflict_groups' => $conflictGroupNames
+            ]);
+        }
+
         foreach ($groups as $g) {
             $groupName = $this->getLdapAttributeValue($g, $groupNameAttribute);
             if ($groupName === '' || !isset($membershipIndex['validGroupNames'][$groupName])) {
