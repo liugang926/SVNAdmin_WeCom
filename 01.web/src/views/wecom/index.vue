@@ -24,6 +24,15 @@
           >
             刷新状态
           </Button>
+          <Button
+            type="warning"
+            icon="ios-pulse"
+            @click="openDiagnostics"
+            size="small"
+            ghost
+          >
+            一键诊断
+          </Button>
         </div>
       </div>
 
@@ -95,6 +104,7 @@
             ref="wecomConfig"
             @config-updated="handleConfigUpdated"
             @status-changed="handleStatusChanged"
+            @request-diagnostics="openDiagnostics"
           />
         </TabPane>
 
@@ -133,6 +143,7 @@
         </TabPane>
       </Tabs>
     </Card>
+    <WecomDiagnostics ref="wecomDiagnostics" @go-config="goConfigFromDiagnostics" />
   </div>
 </template>
 
@@ -143,6 +154,7 @@ import WecomNotification from './components/WecomNotification.vue'
 import WecomMapping from './components/WecomMapping.vue'
 import WecomMonitor from './components/WecomMonitor.vue'
 import WecomHelp from './components/WecomHelp.vue'
+import WecomDiagnostics from './components/WecomDiagnostics.vue'
 
 export default {
   name: 'WecomIndex',
@@ -152,7 +164,8 @@ export default {
     WecomNotification,
     WecomMapping,
     WecomMonitor,
-    WecomHelp
+    WecomHelp,
+    WecomDiagnostics
   },
   data() {
     return {
@@ -262,6 +275,14 @@ export default {
     },
     setActiveTab(tabName) {
       this.activeTab = tabName
+    },
+    openDiagnostics() {
+      if (this.$refs.wecomDiagnostics) {
+        this.$refs.wecomDiagnostics.open()
+      }
+    },
+    goConfigFromDiagnostics() {
+      this.activeTab = 'config'
     },
     handleConfigUpdated() {
       this.$Message.success('配置更新成功')

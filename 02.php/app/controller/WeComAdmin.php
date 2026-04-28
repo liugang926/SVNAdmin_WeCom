@@ -755,6 +755,492 @@ class WeComAdmin extends Base
     }
 
     /**
+     * 企业微信一键诊断
+     */
+    public function RunDiagnostics()
+    {
+        try {
+            $checks = [];
+
+            $checks = array_merge($checks, $this->diagnoseWeComConfig());
+            $checks = array_merge($checks, $this->diagnosePhpRuntime());
+            $checks = array_merge($checks, $this->diagnoseFilePermissions());
+            $checks = array_merge($checks, $this->diagnoseDatabaseTables());
+            $checks = array_merge($checks, $this->diagnoseNetwork());
+            $checks = array_merge($checks, $this->diagnoseSyncAndNotification());
+
+            $summary = $this->calculateDiagnosticSummary($checks);
+            $overallStatus = 'passed';
+            if ($summary['failed'] > 0) {
+                $overallStatus = 'failed';
+            } elseif ($summary['warning'] > 0 || $summary['unchecked'] > 0) {
+                $overallStatus = 'warning';
+            }
+
+            json1(200, 1, '诊断完成', [
+                'overall_status' => $overallStatus,
+                'summary' => $summary,
+                'checks' => $checks,
+                'generated_at' => date('Y-m-d H:i:s')
+            ]);
+        } catch (\Exception $e) {
+            json1(200, 0, '诊断失败: ' . $e->getMessage(), [
+                'overall_status' => 'failed',
+                'summary' => [
+                    'passed' => 0,
+                    'warning' => 0,
+                    'failed' => 1,
+                    'unchecked' => 0
+                ],
+                'checks' => [
+                    $this->buildDiagnosticCheck(
+                        'diagnostics_runtime',
+                        '诊断服务',
+                        '诊断服务运行',
+                        'failed',
+                        '诊断执行过程中发生异常',
+                        '请查看 PHP 错误日志或联系管理员。',
+                        ['error' => $e->getMessage()]
+                    )
+                ],
+                'generated_at' => date('Y-m-d H:i:s')
+            ]);
+        }
+    }
+
+    private function diagnoseWeComConfig()
+    {
+        $checks = [];
+        try {
+            $config = WeComConfig::getConfig();
+
+            $required = [
+                'corp_id' => '企业 ID',
+                'agent_id' => '应用 AgentId',
+                'corp_secret' => '应用 Secret'
+            ];
+
+            foreach ($required as $key => $label) {
+                $checks[] = $this->buildDiagnosticCheck(
+                    'config_' . $key,
+                    '基础配置',
+                    $label,
+                    empty($config[$key]) ? 'failed' : 'passed',
+                    empty($config[$key]) ? $label . ' 未配置' : $label . ' 已配置',
+                    empty($config[$key]) ? '请在企业微信基础配置中补充该字段后重新诊断。' : '',
+                    ['configured' => !empty($config[$key])]
+                );
+            }
+
+            $notifyConfigured = !empty($config['webhook_url']) || !empty($config['callback_url']) || !empty($config['token']);
+            $checks[] = $this->buildDiagnosticCheck(
+                'config_notification',
+                '基础配置',
+                '通知/回调配置',
+                $notifyConfigured ? 'passed' : 'warning',
+                $notifyConfigured ? '通知或回调配置已存在' : '未检测到通知或回调配置',
+                $notifyConfigured ? '' : '如需提交通知或回调消息，请在通知管理或基础配置中补充相关配置。',
+                ['configured' => $notifyConfigured]
+            );
+        } catch (\Exception $e) {
+            $checks[] = $this->buildDiagnosticCheck(
+                'config_read',
+                '基础配置',
+                '读取配置',
+                'failed',
+                '读取企业微信配置失败',
+                '请检查 config/wecom.php 是否存在且格式正确。',
+                ['error' => $e->getMessage()]
+            );
+        }
+        return $checks;
+    }
+
+    private function diagnosePhpRuntime()
+    {
+        $checks = [];
+        $checks[] = $this->buildDiagnosticCheck(
+            'php_version',
+            'PHP运行环境',
+            'PHP 版本',
+            version_compare(PHP_VERSION, '7.0.0', '>=') ? 'passed' : 'warning',
+            '当前 PHP 版本: ' . PHP_VERSION,
+            version_compare(PHP_VERSION, '7.0.0', '>=') ? '' : '建议升级到 PHP 7.0 或更高版本。',
+            ['version' => PHP_VERSION]
+        );
+
+        $extensions = [
+            'curl' => 'curl 扩展',
+            'openssl' => 'openssl 扩展',
+            'json' => 'json 扩展',
+            'PDO' => 'PDO 扩展'
+        ];
+
+        $dbType = \Config::get('database')['database_type'] ?? 'sqlite';
+        if ($dbType === 'sqlite') {
+            $extensions['pdo_sqlite'] = 'pdo_sqlite 扩展';
+        } elseif ($dbType === 'mysql') {
+            $extensions['pdo_mysql'] = 'pdo_mysql 扩展';
+        }
+
+        foreach ($extensions as $extension => $label) {
+            $loaded = extension_loaded($extension);
+            $checks[] = $this->buildDiagnosticCheck(
+                'php_extension_' . strtolower($extension),
+                'PHP运行环境',
+                $label,
+                $loaded ? 'passed' : 'failed',
+                $loaded ? $label . ' 已启用' : $label . ' 未启用',
+                $loaded ? '' : '请安装并启用 ' . $extension . ' 扩展，然后重启 PHP 服务。',
+                ['loaded' => $loaded]
+            );
+        }
+
+        return $checks;
+    }
+
+    private function diagnoseFilePermissions()
+    {
+        $checks = [];
+        $targets = [
+            [
+                'key' => 'file_config_wecom',
+                'name' => 'WeCom 配置文件',
+                'path' => BASE_PATH . '/config/wecom.php',
+                'relative' => 'config/wecom.php',
+                'need_write' => true
+            ],
+            [
+                'key' => 'dir_runtime',
+                'name' => 'Token 缓存目录',
+                'path' => BASE_PATH . '/runtime',
+                'relative' => 'runtime',
+                'need_write' => true
+            ],
+            [
+                'key' => 'dir_logs',
+                'name' => 'WeCom 日志目录',
+                'path' => BASE_PATH . '/logs',
+                'relative' => 'logs',
+                'need_write' => true
+            ]
+        ];
+
+        foreach ($targets as $target) {
+            $exists = file_exists($target['path']);
+            $readable = $exists && is_readable($target['path']);
+            $writable = $exists && is_writable($target['path']);
+            $ok = $exists && $readable && (!$target['need_write'] || $writable);
+            $checks[] = $this->buildDiagnosticCheck(
+                $target['key'],
+                '文件与目录权限',
+                $target['name'],
+                $ok ? 'passed' : 'failed',
+                $ok ? $target['relative'] . ' 权限正常' : $target['relative'] . ' 不存在或权限不足',
+                $ok ? '' : '请检查该路径是否存在，并确保 PHP 运行用户具备读写权限。',
+                [
+                    'path' => $target['relative'],
+                    'exists' => $exists,
+                    'readable' => $readable,
+                    'writable' => $writable
+                ]
+            );
+        }
+
+        return $checks;
+    }
+
+    private function diagnoseDatabaseTables()
+    {
+        $checks = [];
+        global $database;
+
+        try {
+            $database->query('SELECT 1')->fetchColumn();
+            $checks[] = $this->buildDiagnosticCheck(
+                'database_connection',
+                '数据库与表',
+                '数据库连接',
+                'passed',
+                '数据库连接正常'
+            );
+        } catch (\Exception $e) {
+            $checks[] = $this->buildDiagnosticCheck(
+                'database_connection',
+                '数据库与表',
+                '数据库连接',
+                'failed',
+                '数据库连接失败',
+                '请检查数据库配置与服务状态。',
+                ['error' => $e->getMessage()]
+            );
+            return $checks;
+        }
+
+        $tables = $this->getWeComRequiredTables();
+        $missing = [];
+        foreach ($tables as $table) {
+            if (!$this->tableExists($table)) {
+                $missing[] = $table;
+            }
+        }
+
+        $checks[] = $this->buildDiagnosticCheck(
+            'database_wecom_tables',
+            '数据库与表',
+            'WeCom 数据表',
+            empty($missing) ? 'passed' : 'failed',
+            empty($missing) ? 'WeCom 相关表均存在' : '存在缺失的 WeCom 数据表',
+            empty($missing) ? '' : '请执行 WeCom 数据库迁移或升级脚本后重新诊断。',
+            ['missing_tables' => $missing]
+        );
+
+        if (empty($missing)) {
+            $checks[] = $this->buildDiagnosticCheck(
+                'database_wecom_counts',
+                '数据库与表',
+                '关键数据统计',
+                'passed',
+                'WeCom 关键表可正常读取',
+                '',
+                [
+                    'departments_count' => $database->count('wecom_departments'),
+                    'users_count' => $database->count('wecom_users'),
+                    'notification_rules_count' => $database->count('wecom_notification_rules'),
+                    'last_sync_time' => $database->get('wecom_config', 'last_sync_time')
+                ]
+            );
+        }
+
+        return $checks;
+    }
+
+    private function diagnoseNetwork()
+    {
+        $checks = [];
+        $host = 'qyapi.weixin.qq.com';
+        $ip = gethostbyname($host);
+        $dnsOk = $ip && $ip !== $host;
+        $checks[] = $this->buildDiagnosticCheck(
+            'network_dns',
+            '网络连通性',
+            '企业微信域名解析',
+            $dnsOk ? 'passed' : 'failed',
+            $dnsOk ? '域名解析正常' : '域名解析失败',
+            $dnsOk ? '' : '请检查服务器 DNS、网络策略或代理配置。',
+            ['host' => $host, 'resolved_ip' => $dnsOk ? $ip : '']
+        );
+
+        $httpsOk = false;
+        $httpsError = '';
+        $start = microtime(true);
+        $fp = @fsockopen('ssl://' . $host, 443, $errno, $errstr, 5);
+        if ($fp) {
+            $httpsOk = true;
+            fclose($fp);
+        } else {
+            $httpsError = trim($errno . ' ' . $errstr);
+        }
+        $checks[] = $this->buildDiagnosticCheck(
+            'network_https',
+            '网络连通性',
+            'HTTPS 连通性',
+            $httpsOk ? 'passed' : 'failed',
+            $httpsOk ? 'HTTPS 连接正常' : 'HTTPS 连接失败',
+            $httpsOk ? '' : '请检查防火墙、出站 443 端口、代理和证书链。',
+            ['host' => $host, 'duration_ms' => round((microtime(true) - $start) * 1000), 'error' => $httpsError]
+        );
+
+        if ($this->ServiceWeComAPI) {
+            try {
+                $tokenResult = $this->ServiceWeComAPI->getAccessToken();
+                $passed = isset($tokenResult['status']) && $tokenResult['status'] == 1;
+                $checks[] = $this->buildDiagnosticCheck(
+                    'wecom_access_token',
+                    '网络连通性',
+                    '获取 access_token',
+                    $passed ? 'passed' : 'failed',
+                    $passed ? 'access_token 获取成功' : ($tokenResult['message'] ?? 'access_token 获取失败'),
+                    $passed ? '' : '请检查企业微信 CorpID、Secret、应用状态和服务器网络连通性。',
+                    ['status' => $tokenResult['status'] ?? 0]
+                );
+            } catch (\Exception $e) {
+                $checks[] = $this->buildDiagnosticCheck(
+                    'wecom_access_token',
+                    '网络连通性',
+                    '获取 access_token',
+                    'failed',
+                    'access_token 获取异常',
+                    '请检查企业微信凭证、网络连通性和后端日志。',
+                    ['error' => $e->getMessage()]
+                );
+            }
+        } else {
+            $checks[] = $this->buildDiagnosticCheck(
+                'wecom_access_token',
+                '网络连通性',
+                '获取 access_token',
+                'unchecked',
+                'WeCom API 服务未初始化，跳过 access_token 检测',
+                '请先检查基础配置和 PHP 运行环境。'
+            );
+        }
+
+        return $checks;
+    }
+
+    private function diagnoseSyncAndNotification()
+    {
+        $checks = [];
+        global $database;
+
+        if (!$this->checkWeComTables()) {
+            $checks[] = $this->buildDiagnosticCheck(
+                'sync_notification_status',
+                '同步与通知',
+                '同步与通知状态',
+                'unchecked',
+                'WeCom 数据表缺失，跳过同步与通知检测',
+                '请先完成数据库迁移。'
+            );
+            return $checks;
+        }
+
+        try {
+            $lastSync = $database->get('wecom_sync_logs', '*', [
+                'ORDER' => ['created_at' => 'DESC']
+            ]);
+            if ($lastSync) {
+                $status = $lastSync['sync_status'] ?? ($lastSync['status'] ?? '');
+                $checkStatus = in_array($status, ['success', 'completed']) ? 'passed' : ($status === 'running' ? 'warning' : 'failed');
+                $checks[] = $this->buildDiagnosticCheck(
+                    'sync_last_status',
+                    '同步与通知',
+                    '最近同步任务',
+                    $checkStatus,
+                    '最近同步状态: ' . $status,
+                    $checkStatus === 'failed' ? '请查看同步日志，确认企业微信 API 权限和用户/部门数据格式。' : '',
+                    [
+                        'sync_type' => $lastSync['sync_type'] ?? '',
+                        'start_time' => $lastSync['start_time'] ?? '',
+                        'end_time' => $lastSync['end_time'] ?? '',
+                        'message' => $lastSync['summary'] ?? ($lastSync['error_details'] ?? '')
+                    ]
+                );
+            } else {
+                $checks[] = $this->buildDiagnosticCheck(
+                    'sync_last_status',
+                    '同步与通知',
+                    '最近同步任务',
+                    'warning',
+                    '暂未发现同步任务记录',
+                    '配置完成后建议执行一次同步，以验证组织架构与用户数据。'
+                );
+            }
+
+            $rulesCount = $database->count('wecom_notification_rules');
+            $checks[] = $this->buildDiagnosticCheck(
+                'notification_rules',
+                '同步与通知',
+                '通知规则',
+                $rulesCount > 0 ? 'passed' : 'warning',
+                $rulesCount > 0 ? '已配置 ' . $rulesCount . ' 条通知规则' : '暂未配置通知规则',
+                $rulesCount > 0 ? '' : '如需提交通知，请在通知管理中创建规则。',
+                ['rules_count' => $rulesCount]
+            );
+        } catch (\Exception $e) {
+            $checks[] = $this->buildDiagnosticCheck(
+                'sync_notification_status',
+                '同步与通知',
+                '同步与通知状态',
+                'failed',
+                '读取同步或通知状态失败',
+                '请检查 WeCom 数据表结构和后端日志。',
+                ['error' => $e->getMessage()]
+            );
+        }
+
+        return $checks;
+    }
+
+    private function buildDiagnosticCheck($key, $group, $name, $status, $message, $suggestion = '', $details = [])
+    {
+        return [
+            'key' => $key,
+            'group' => $group,
+            'name' => $name,
+            'status' => $status,
+            'message' => $message,
+            'suggestion' => $suggestion,
+            'details' => $this->sanitizeDiagnosticDetails($details)
+        ];
+    }
+
+    private function calculateDiagnosticSummary($checks)
+    {
+        $summary = [
+            'passed' => 0,
+            'warning' => 0,
+            'failed' => 0,
+            'unchecked' => 0
+        ];
+        foreach ($checks as $check) {
+            $status = $check['status'] ?? 'unchecked';
+            if (!isset($summary[$status])) {
+                $status = 'unchecked';
+            }
+            $summary[$status]++;
+        }
+        return $summary;
+    }
+
+    private function sanitizeDiagnosticDetails($details)
+    {
+        if (!is_array($details)) {
+            return $details;
+        }
+        $sensitiveKeys = ['corp_secret', 'secret', 'access_token', 'token', 'aes_key', 'password'];
+        foreach ($details as $key => $value) {
+            if (in_array(strtolower($key), $sensitiveKeys)) {
+                $details[$key] = $this->maskSensitiveData((string)$value);
+            } elseif (is_array($value)) {
+                $details[$key] = $this->sanitizeDiagnosticDetails($value);
+            }
+        }
+        return $details;
+    }
+
+    private function getWeComRequiredTables()
+    {
+        return [
+            'wecom_config',
+            'wecom_departments',
+            'wecom_users',
+            'wecom_notification_rules',
+            'wecom_notification_logs',
+            'wecom_sync_logs',
+            'wecom_api_logs',
+            'wecom_notification_queue'
+        ];
+    }
+
+    private function tableExists($table)
+    {
+        try {
+            global $database;
+            $dbType = \Config::get('database')['database_type'] ?? 'sqlite';
+            if ($dbType === 'sqlite') {
+                $stmt = $database->query("SELECT name FROM sqlite_master WHERE type='table' AND name='{$table}'");
+                return $stmt !== false && $stmt->fetchColumn();
+            }
+            $stmt = $database->query("SHOW TABLES LIKE '{$table}'");
+            return $stmt !== false && $stmt->fetch();
+        } catch (\Exception $e) {
+            return false;
+        }
+    }
+
+    /**
      * 检查企业微信相关数据库表是否存在
      */
     private function checkWeComTables()
@@ -762,35 +1248,8 @@ class WeComAdmin extends Base
         try {
             global $database;
 
-            $requiredTables = [
-                'wecom_config',
-                'wecom_departments',
-                'wecom_users',
-                'wecom_notification_rules',
-                'wecom_notification_logs',
-                'wecom_sync_logs',
-                'wecom_api_logs',
-                'wecom_notification_queue'
-            ];
-
-            // 根据数据库类型选择更稳妥的表存在性检查
-            $dbType = \Config::get('database')['database_type'] ?? 'sqlite';
-
-            foreach ($requiredTables as $table) {
-                $exists = false;
-                if ($dbType === 'sqlite') {
-                    $stmt = $database->query("SELECT name FROM sqlite_master WHERE type='table' AND name='{$table}'");
-                    if ($stmt !== false && $stmt->fetchColumn()) {
-                        $exists = true;
-                    }
-                } else { // MySQL 及其它：使用 SHOW TABLES LIKE
-                    $stmt = $database->query("SHOW TABLES LIKE '{$table}'");
-                    if ($stmt !== false && $stmt->fetch()) {
-                        $exists = true;
-                    }
-                }
-
-                if (!$exists) {
+            foreach ($this->getWeComRequiredTables() as $table) {
+                if (!$this->tableExists($table)) {
                     return false;
                 }
             }

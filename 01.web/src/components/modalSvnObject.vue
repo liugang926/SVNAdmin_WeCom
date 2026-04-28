@@ -5,6 +5,7 @@
       v-model="modalSvnObject"
       :draggable="true"
       @on-visible-change="ChangeModalVisible"
+      width="860"
       title="对象列表"
     >
       <Tabs
@@ -13,7 +14,7 @@
         @on-click="ClickRepPathPriTab"
       >
         <TabPane :label="custom_tab_svn_user" name="user" v-if="showSvnUserTab">
-          <Row style="margin-bottom: 15px">
+          <Row class="object-select-toolbar">
             <Col type="flex" justify="space-between" span="12">
               <Tooltip
                 max-width="250"
@@ -29,6 +30,12 @@
                   >同步列表</Button
                 >
               </Tooltip>
+              <Button
+                type="primary"
+                icon="md-checkmark"
+                :disabled="selectedUsers.length == 0"
+                @click="BatchSelectObjects('user')"
+              >批量选择 {{ selectedUsers.length }}</Button>
             </Col>
             <Col span="12">
               <Input
@@ -49,6 +56,7 @@
             :columns="tableColumnAllUsers"
             :data="tableDataAllUsers"
             @on-column-width-resize="onColumnWidthResize"
+            @on-selection-change="HandleUserSelectionChange"
             style="margin-bottom: 10px"
           >
             <template slot-scope="{ index }" slot="index">
@@ -95,7 +103,7 @@
           name="group"
           v-if="showSvnGroupTab"
         >
-          <Row style="margin-bottom: 15px">
+          <Row class="object-select-toolbar">
             <Col type="flex" justify="space-between" span="12">
               <Tooltip
                 max-width="250"
@@ -111,6 +119,12 @@
                   >同步列表</Button
                 >
               </Tooltip>
+              <Button
+                type="primary"
+                icon="md-checkmark"
+                :disabled="selectedGroups.length == 0"
+                @click="BatchSelectObjects('group')"
+              >批量选择 {{ selectedGroups.length }}</Button>
             </Col>
             <Col span="12">
               <Input
@@ -131,6 +145,7 @@
             :columns="tableColumnAllGroups"
             :data="tableDataAllGroups"
             @on-column-width-resize="onColumnWidthResize"
+            @on-selection-change="HandleGroupSelectionChange"
             style="margin-bottom: 10px"
           >
             <template slot-scope="{ index }" slot="index">
@@ -173,7 +188,7 @@
           name="aliase"
           v-if="showSvnAliaseTab"
         >
-          <Row style="margin-bottom: 15px">
+          <Row class="object-select-toolbar">
             <Col type="flex" justify="space-between" span="12">
               <!-- <Tooltip
                 max-width="250"
@@ -189,6 +204,12 @@
                   >同步列表</Button
                 >
               </Tooltip> -->
+              <Button
+                type="primary"
+                icon="md-checkmark"
+                :disabled="selectedAliases.length == 0"
+                @click="BatchSelectObjects('aliase')"
+              >批量选择 {{ selectedAliases.length }}</Button>
             </Col>
             <Col span="12">
               <Input
@@ -208,6 +229,7 @@
             :columns="tableColumnAllAliases"
             :data="tableDataAllAliases"
             @on-column-width-resize="onColumnWidthResize"
+            @on-selection-change="HandleAliaseSelectionChange"
             style="margin-bottom: 10px"
           >
             <template slot-scope="{ row }" slot="disabled">
@@ -567,6 +589,9 @@ export default {
        */
       //分组成员对话框的标题
       titleGetGroupMember: "",
+      selectedUsers: [],
+      selectedGroups: [],
+      selectedAliases: [],
 
       /**
        * 显示状态
@@ -594,6 +619,13 @@ export default {
 
       //对象列表-SVN用户列表
       tableColumnAllUsers: [
+        {
+          type: "selection",
+          width: 52,
+          align: "center",
+          fixed: "left",
+          resizable: false,
+        },
         {
           title: "用户名",
           key: "svn_user_name",
@@ -647,12 +679,20 @@ export default {
           width: 90,
           minWidth: 80,
           align: 'center',
+          fixed: "right",
           resizable: false,
         },
       ],
       tableDataAllUsers: [],
       //对象列表-SVN分组列表
       tableColumnAllGroups: [
+        {
+          type: "selection",
+          width: 52,
+          align: "center",
+          fixed: "left",
+          resizable: false,
+        },
         {
           title: "分组名",
           key: "svn_group_name",
@@ -690,12 +730,20 @@ export default {
           width: 90,
           minWidth: 80,
           align: 'center',
+          fixed: "right",
           resizable: false,
         },
       ],
       tableDataAllGroups: [],
       //对象列表-SVN别名列表
       tableColumnAllAliases: [
+        {
+          type: "selection",
+          width: 52,
+          align: "center",
+          fixed: "left",
+          resizable: false,
+        },
         {
           title: "别名",
           key: "aliaseName",
@@ -717,6 +765,7 @@ export default {
           slot: "action",
           width: 90,
           minWidth: 80,
+          fixed: "right",
           resizable: false,
         },
       ],
@@ -1039,7 +1088,50 @@ export default {
      * 点击对象列表弹出框下的 tab 触发
      */
     ClickRepPathPriTab(name) {
+      this.ClearCurrentSelection(name);
       this.loadObjectTab(name);
+    },
+    HandleUserSelectionChange(selection) {
+      this.selectedUsers = selection || [];
+    },
+    HandleGroupSelectionChange(selection) {
+      this.selectedGroups = selection || [];
+    },
+    HandleAliaseSelectionChange(selection) {
+      this.selectedAliases = selection || [];
+    },
+    ClearCurrentSelection(name) {
+      if (name === "user") {
+        this.selectedUsers = [];
+      } else if (name === "group") {
+        this.selectedGroups = [];
+      } else if (name === "aliase") {
+        this.selectedAliases = [];
+      }
+    },
+    BatchSelectObjects(type) {
+      const selectedMap = {
+        user: this.selectedUsers,
+        group: this.selectedGroups,
+        aliase: this.selectedAliases,
+      };
+      const nameKeyMap = {
+        user: "svn_user_name",
+        group: "svn_group_name",
+        aliase: "aliaseName",
+      };
+      const selectedRows = selectedMap[type] || [];
+      const nameKey = nameKeyMap[type];
+      if (selectedRows.length == 0 || !nameKey) {
+        return;
+      }
+      selectedRows.forEach((row) => {
+        if (row && row[nameKey]) {
+          this.propSendParentObject(type, row[nameKey]);
+        }
+      });
+      this.$Message.success("已提交 " + selectedRows.length + " 个选择");
+      this.ClearCurrentSelection(type);
     },
     /**
      * 每页数量改变
@@ -1064,6 +1156,7 @@ export default {
       var that = this;
       //清空上次数据
       that.tableDataAllUsers = [];
+      that.selectedUsers = [];
       //开始加载动画
       that.loadingAllUsers = true;
       var data = {
@@ -1125,6 +1218,7 @@ export default {
       var that = this;
       //清空上次数据
       that.tableDataAllGroups = [];
+      that.selectedGroups = [];
       //开始加载动画
       that.loadingAllGroups = true;
       var data = {
@@ -1170,6 +1264,7 @@ export default {
       var that = this;
       //清空上次数据
       that.tableDataAllAliases = [];
+      that.selectedAliases = [];
       //开始加载动画
       that.loadingAllAliases = true;
       var data = {
@@ -1241,5 +1336,14 @@ export default {
 };
 </script>
 
-<style>
+<style scoped>
+.object-select-toolbar {
+  margin-bottom: 15px;
+}
+
+.object-select-toolbar /deep/ .ivu-col:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 </style>

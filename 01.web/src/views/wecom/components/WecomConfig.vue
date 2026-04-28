@@ -53,6 +53,10 @@
               <Icon type="ios-wifi"/>
               测试连接
             </Button>
+            <Button style="margin-top: 8px;" @click="$emit('request-diagnostics')">
+              <Icon type="ios-pulse"/>
+              一键诊断
+            </Button>
           </div>
         </Col>
       </Row>
@@ -149,6 +153,10 @@
           <Button @click="exportConfig" style="margin-left: 8px;">
             <Icon type="ios-download"/>
             导出配置
+          </Button>
+          <Button @click="$emit('request-diagnostics')" style="margin-left: 8px;">
+            <Icon type="ios-pulse"/>
+            一键诊断
           </Button>
           <Button @click="showImportModal" style="margin-left: 8px;">
             <Icon type="ios-cloud-upload"/>

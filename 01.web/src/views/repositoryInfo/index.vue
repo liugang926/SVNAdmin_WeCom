@@ -1,14 +1,8 @@
 <template>
-  <div>
+  <div class="repository-page">
     <Card :bordered="false" :dis-hover="true">
-      <!-- SVNserve服务非正常状态提示 -->
-      <Alert
-        v-if="formStatusSubversion.status == false"
-        type="error"
-        show-icon
-        >{{ formStatusSubversion.info }}</Alert
-      >
-      <Row style="margin-bottom: 20px" type="flex" align="middle" :gutter="16">
+      <ServiceStatusBanner :items="serviceStatusItems" />
+      <Row class="repo-toolbar" type="flex" align="middle" :gutter="16">
         <Col :flex="1">
           <div class="action-bar">
             <!-- 核心管理组 -->
@@ -51,29 +45,72 @@
           </div>
         </Col>
         <Col span="6">
-          <Input
-            search
-            enter-button
-            placeholder="搜索仓库名、备注..."
-            @on-search="GetRepList()"
-            v-model="searchKeywordRep"
-            v-if="user_role_id == 1 || user_role_id == 3"
-            class="search-input"
-          />
-          <Input
-            search
-            enter-button
-            placeholder="搜索仓库名..."
-            @on-search="GetSvnUserRepList()"
-            v-model="searchKeywordRep"
-            v-if="user_role_id == 2"
-            class="search-input"
-          />
+          <div class="repo-search-box">
+            <Input
+              search
+              enter-button
+              placeholder="搜索仓库名、备注..."
+              @on-search="submitRepoSearch"
+              @on-change="handleRepoSuggestInput"
+              @keydown.native="handleRepoSuggestKeydown"
+              @on-focus="openRepoSuggestions"
+              v-model="searchKeywordRep"
+              v-if="user_role_id == 1 || user_role_id == 3"
+              class="search-input"
+            />
+            <Input
+              search
+              enter-button
+              placeholder="搜索仓库名..."
+              @on-search="submitRepoSearch"
+              @on-change="handleRepoSuggestInput"
+              @keydown.native="handleRepoSuggestKeydown"
+              @on-focus="openRepoSuggestions"
+              v-model="searchKeywordRep"
+              v-if="user_role_id == 2"
+              class="search-input"
+            />
+            <div v-if="repoSuggestVisible" class="repo-suggest-panel">
+              <div v-if="repoSuggestLoading" class="repo-suggest-state">正在查找...</div>
+              <template v-else>
+                <div
+                  v-for="(item, index) in repoSuggestions"
+                  :key="item.rep_name + '-' + index"
+                  class="repo-suggest-item"
+                  :class="{ active: repoSuggestActiveIndex === index }"
+                  @mousedown.prevent="selectRepoSuggestion(item)"
+                >
+                  <div class="suggest-main">
+                    <Icon type="ios-folder" />
+                    <strong v-html="highlightSuggestText(item.rep_name)"></strong>
+                    <Tag size="small" v-if="item.matchLabel">{{ item.matchLabel }}</Tag>
+                  </div>
+                  <div class="suggest-meta">
+                    <span v-if="item.rep_note" v-html="highlightSuggestText(item.rep_note)"></span>
+                    <span v-if="item.rep_rev">版本 {{ item.rep_rev }}</span>
+                    <span v-if="item.rep_size">体积 {{ item.rep_size }}</span>
+                  </div>
+                </div>
+                <div v-if="repoSuggestions.length === 0" class="repo-empty-state">
+                  <div class="repo-empty-illustration">
+                    <Icon type="ios-search" />
+                  </div>
+                  <strong>没有找到相关仓库</strong>
+                  <span>试试换个关键词？</span>
+                </div>
+              </template>
+            </div>
+          </div>
         </Col>
       </Row>
       
       <!-- 管理人员仓库列表 -->
       <div v-if="user_role_id == 1 || user_role_id == 3" class="table-container">
+        <div class="repo-table-skeleton" v-if="loadingRep && tableDataRep.length > 0">
+          <div v-for="n in 6" :key="'rep-skeleton-' + n" class="skeleton-row">
+            <span></span><span></span><span></span><span></span>
+          </div>
+        </div>
         <Table
           ref="repTable"
           @on-sort-change="SortChangeRep"
@@ -81,10 +118,11 @@
           :columns="tableColumnRep"
           :data="tableDataRep"
           :loading="loadingRep"
-          border
+          :row-class-name="getRepoRowClassName"
           resizable
           size="small"
           class="modern-table"
+          :class="{ 'table-soft-loading': loadingRep && tableDataRep.length > 0 }"
         >
         <template slot-scope="{ index }" slot="index">
           <span class="index-cell">{{ pageSizeRep * (pageCurrentRep - 1) + index + 1 }}</span>
@@ -112,13 +150,31 @@
           </div>
         </template>
         <template slot-scope="{ row, index }" slot="rep_note">
-          <Input
-            ghost
-            class="note-input"
-            v-model="tableDataRep[index].rep_note"
-            @on-blur="UpdRepNote(index, row.rep_name)"
-            placeholder="点击添加备注..."
-          />
+          <div class="note-input-wrap">
+            <Icon
+              v-if="!isRepNoteSaving(row.rep_name) && !isRepNoteSaved(row.rep_name)"
+              type="md-create"
+              class="note-edit-icon"
+            />
+            <Input
+              ghost
+              class="note-input"
+              v-model="tableDataRep[index].rep_note"
+              @on-blur="UpdRepNote(index, row.rep_name)"
+              @on-enter="UpdRepNote(index, row.rep_name)"
+              placeholder="点击添加备注..."
+            />
+            <Icon
+              v-if="isRepNoteSaving(row.rep_name)"
+              type="ios-loading"
+              class="note-saving-icon ani-rotate"
+            />
+            <Icon
+              v-else-if="isRepNoteSaved(row.rep_name)"
+              type="md-checkmark-circle"
+              class="note-saved-icon"
+            />
+          </div>
         </template>
         <template slot-scope="{ row }" slot="action_main">
           <div class="repo-action-group">
@@ -128,7 +184,7 @@
               ghost
               icon="ios-folder-open"
               class="repo-action-button"
-              @click="ModalViewRep(row.rep_name)"
+              @click="OpenRepoExplorer(row.rep_name)"
               >浏览</Button
             >
             <Button
@@ -146,7 +202,7 @@
               ghost
               icon="ios-git-branch"
               class="repo-action-button"
-              @click="ModalRepHooks(row.rep_name)"
+              @click="OpenRepoHookManager(row.rep_name)"
               >钩子</Button
             >
           </div>
@@ -168,10 +224,10 @@
       <Table
         v-if="user_role_id == 2"
         @on-sort-change="SortChangeUserRep"
-        border
         :loading="loadingUserRep"
         :columns="tableColumnUserRep"
         :data="tableDataUserRep"
+        :row-class-name="getRepoRowClassName"
         size="small"
       >
         <template slot-scope="{ index }" slot="index">
@@ -196,14 +252,14 @@
           <Button
             type="info"
             size="small"
-            @click="ModalViewUserRep(row.rep_name, row.pri_path)"
+            @click="OpenRepoExplorerUser(row.rep_name, row.pri_path)"
             >浏览</Button
           >
           <Button
             type="info"
             size="small"
             v-if="enableCheckout == 'http'"
-            @click="ModalViewUserRepRaw(row.raw_url)"
+            @click="OpenRepoExplorerRaw(row.raw_url)"
             >原生浏览</Button
           >
         </template>
@@ -277,299 +333,9 @@
         >
       </div>
     </Modal>
-    <!-- 对话框-仓库浏览 -->
-    <Modal v-model="modalViewRep" fullscreen :title="titleModalViewRep" class-name="modern-browser-modal">
-      <div class="browser-container">
-        <!-- 顶栏：导航与快速操作 -->
-        <div class="browser-header">
-          <div class="nav-area">
-            <div class="path-nav">
-              <Breadcrumb separator="/" class="modern-breadcrumb">
-                <BreadcrumbItem
-                  v-for="(item, index) in breadRepPath.name"
-                  :key="index"
-                  @click.native="ClickBreadGetRepCon(breadRepPath.path[index])"
-                >
-                  <Icon :type="index === 0 ? 'md-cube' : 'ios-folder'" style="margin-right: 4px" />
-                  {{ item }}
-                </BreadcrumbItem>
-              </Breadcrumb>
-            </div>
-          </div>
-          <div class="action-area">
-            <div class="checkout-box">
-              <span class="checkout-label">检出地址:</span>
-              <Input readonly v-model="tempCheckout" size="small" class="checkout-input">
-                <Button slot="append" icon="md-copy" @click="CopyCheckout">复制地址</Button>
-              </Input>
-            </div>
-          </div>
-        </div>
-
-        <!-- 主体：文件列表 -->
-        <div class="browser-content">
-          <Table
-            height="calc(100vh - 160px)"
-            highlight-row
-            :no-data-text="noDataTextRepCon"
-            :border="false"
-            :loading="loadingRepCon"
-            :columns="tableColumnRepCon"
-            :data="tableDataRepCon"
-            @on-row-click="ClickRowGetRepCon"
-            class="browser-table"
-          >
-            <template slot-scope="{ row }" slot="resourceType">
-              <div class="file-icon-wrapper">
-                <Icon
-                  v-if="row.resourceType == 1"
-                  type="ios-document"
-                  size="24"
-                  class="icon-file"
-                />
-                <Icon
-                  v-if="row.resourceType == 2"
-                  type="ios-folder"
-                  size="24"
-                  class="icon-folder"
-                />
-              </div>
-            </template>
-            <template slot-scope="{ row }" slot="resourceName">
-              <div class="file-name-info">
-                <span class="name-text">{{ row.resourceName }}</span>
-              </div>
-            </template>
-            <template slot-scope="{ row }" slot="revInfo">
-              <div class="rev-cell">
-                <Tag size="small" color="blue" ghost>r{{ row.revNum }}</Tag>
-                <span class="rev-author">{{ row.revAuthor }}</span>
-              </div>
-            </template>
-          </Table>
-        </div>
-      </div>
-      <div slot="footer" style="display:none"></div>
-    </Modal>
-
-    <!-- 对话框-仓库钩子 -->
-    <Modal
-      v-model="modalRepHooks"
-      :title="titleModalRepHooks"
-      class-name="modern-hooks-modal"
-      width="800"
-    >
-      <div class="hooks-container">
-        <Alert show-icon type="warning" class="hooks-alert">
-          注意：如果 SVN 客户端正在触发钩子，更新可能会阻塞或失败，请确保操作时无活跃事务。
-        </Alert>
-        
-        <Tabs value="active">
-          <TabPane label="仓库活动钩子" name="active" icon="md-flash">
-            <div class="hooks-grid">
-              <template v-for="(hook, key) in formRepHooks">
-                <Card :key="key" class="hook-card" :dis-hover="true">
-                  <div class="hook-card-header">
-                    <div class="hook-status-info">
-                      <Badge :status="hook.hasFile ? 'success' : 'default'" class="status-dot" />
-                      <span class="hook-name">{{ key.replace('_', '-').toUpperCase() }}</span>
-                    </div>
-                    <div class="hook-actions">
-                      <Tooltip content="功能介绍" placement="top">
-                        <Button size="small" type="text" icon="md-help-circle" @click="ModalStudyRepHook(key)" />
-                      </Tooltip>
-                      <Tooltip content="编辑内容" placement="top">
-                        <Button size="small" type="primary" ghost icon="md-create" @click="ModalEditRepHook(key)" />
-                      </Tooltip>
-                      <Tooltip content="移除脚本" placement="top" v-if="hook.hasFile">
-                        <Button size="small" type="error" ghost icon="md-trash" @click="DelRepHook(hook.fileName)" />
-                      </Tooltip>
-                    </div>
-                  </div>
-                  <div class="hook-card-body">
-                    <p class="hook-desc">{{ hook.fileName || '未配置脚本' }}</p>
-                  </div>
-                </Card>
-              </template>
-            </div>
-            <Spin size="large" fix v-if="loadingGetRepHooks"></Spin>
-          </TabPane>
-          
-          <TabPane label="常用钩子模板" name="templates" icon="md-cube">
-            <div class="recommend-hooks-area">
-              <Scroll height="400">
-                <List border size="small">
-                  <ListItem v-for="(item, index) in recommendHooks" :key="index">
-                    <ListItemMeta :title="item.hookName" :description="item.hookDescription" />
-                    <template slot="action">
-                      <Button type="info" size="small" ghost @click="ViewRecommendHook(item.hookName)">查看代码</Button>
-                    </template>
-                  </ListItem>
-                </List>
-              </Scroll>
-            </div>
-          </TabPane>
-        </Tabs>
-      </div>
-      <div slot="footer">
-        <Button type="primary" size="large" @click="modalRepHooks = false">完成</Button>
-      </div>
-    </Modal>
-    <!-- 对话框-钩子信息介绍 -->
-    <Modal
-      v-model="modalStudyRepHook"
-      :draggable="true"
-      :title="titleModalStudyRepHook"
-    >
-      <Input
-        v-model="tempSelectRepHookTmpl"
-        readonly
-        :rows="15"
-        show-word-limit
-        type="textarea"
-      />
-      <div slot="footer">
-        <Button type="primary" ghost @click="modalStudyRepHook = false"
-          >取消</Button
-        >
-      </div>
-    </Modal>
-    <!-- 对话框-钩子文件编辑 -->
-    <Modal
-      v-model="modalEditRepHook"
-      :draggable="true"
-      :title="titleModalEditRepHook"
-    >
-      <Input
-        v-model="tempSelectRepHookCon"
-        :rows="15"
-        show-word-limit
-        type="textarea"
-        placeholder="具体介绍和语法可看钩子介绍"
-      />
-      <div slot="footer">
-        <Button type="primary" @click="UpdRepHook" :loading="loadingEditRepHook"
-          >应用</Button
-        >
-      </div>
-    </Modal>
-    <!-- 对话框-常用钩子 -->
-    <Modal v-model="modalRecommendHook" :draggable="true" title="常用钩子">
-      <Input
-        v-model="tempSelectRepHookRecommend"
-        readonly
-        :rows="15"
-        show-word-limit
-        type="textarea"
-      />
-      <div slot="footer">
-        <Button type="primary" ghost @click="modalRecommendHook = false"
-          >取消</Button
-        >
-      </div>
-    </Modal>
-    <!-- 对话框-高级 -->
-    <Modal
-      v-model="modalRepAdvance"
-      :draggable="true"
-      :title="titleModalRepAdvance"
-    >
-      <Tabs type="card" v-model="curTabRepAdvance" @on-click="ClickTabAdvance">
-        <TabPane label="仓库属性" name="attribute">
-          <Table
-            :show-header="false"
-            :columns="tableColumnRepDetail"
-            :data="tableDataRepDetail"
-            :loading="loadingRepDetail"
-            size="small"
-            height="350"
-          >
-            <template slot-scope="{ index }" slot="copy">
-              <Button
-                icon="md-copy"
-                type="text"
-                @click="CopyRepDetail(index)"
-              ></Button>
-            </template>
-            <template
-              slot-scope="{ row }"
-              slot="uuid"
-              v-if="row.repKey == 'UUID' || row.repKey == 'uuid'"
-            >
-              <Button type="primary" size="small" @click="ModalSetUUID()"
-                >重设</Button
-              >
-            </template>
-          </Table>
-        </TabPane>
-        <TabPane label="仓库备份" name="backup">
-          <Alert type="error" show-icon v-if="!file.on"
-            >当前环境PHP未开启文件上传功能
-          </Alert>
-          <Row style="margin-bottom: 15px">
-            <Col span="15">
-              <Tooltip
-                max-width="250"
-                content="以svnadmin dump的方式加入后台任务进行备份"
-                placement="bottom"
-                :transfer="true"
-              >
-                <Button
-                  type="primary"
-                  ghost
-                  icon="ios-cafe-outline"
-                  :loading="loadingRepDump"
-                  @click="SvnadminDump"
-                  >立即备份</Button
-                >
-              </Tooltip>
-              <Button
-                type="primary"
-                ghost
-                icon="ios-cloud-upload-outline"
-                @click="ModalUploadBackup"
-                >上传备份</Button
-              >
-            </Col>
-          </Row>
-          <Table
-            height="300"
-            border
-            :columns="tableColumnBackup"
-            :data="tableDataBackup"
-            size="small"
-            :loading="loadingRepBackupList"
-          >
-            <template slot-scope="{ index, row }" slot="action">
-              <Button
-                type="success"
-                size="small"
-                :loading="loadingLoadBackup[index]"
-                @click="SvnadminLoad(row.fileName, index)"
-                >恢复</Button
-              >
-              <Button
-                type="success"
-                size="small"
-                @click="DownloadRepBackup(row.fileUrl)"
-                >下载</Button
-              >
-              <Button
-                type="error"
-                size="small"
-                @click="DelRepBackup(row.fileName)"
-                >删除</Button
-              >
-            </template>
-          </Table>
-        </TabPane>
-      </Tabs>
-      <div slot="footer">
-        <Button type="primary" ghost @click="modalRepAdvance = false"
-          >取消</Button
-        >
-      </div>
-    </Modal>
+    <RepoExplorer ref="repoExplorer" :svnserve-ready="formStatusSubversion.status == true" />
+    <RepoHookManager ref="repoHookManager" />
+    <RepoAdvancedSettings ref="repoAdvancedSettings" />
     <!-- 对话框-编辑仓库名称 -->
     <Modal
       v-model="modalEditRepName"
@@ -595,25 +361,6 @@
         >
       </div>
     </Modal>
-    <!-- 对话框-重设仓库UUID -->
-    <Modal v-model="modalSetUUID" :draggable="true" title="重设仓库UUID">
-      <Form :label-width="80" @submit.native.prevent>
-        <FormItem label="UUID">
-          <Input
-            v-model="tempRepUUID"
-            placeholder="不填写则自动生成全新UUID"
-          ></Input>
-        </FormItem>
-        <FormItem>
-          <Button type="primary" :loading="loadingSetUUID" @click="SetUUID"
-            >确定</Button
-          >
-        </FormItem>
-      </Form>
-      <div slot="footer">
-        <Button type="primary" ghost @click="modalSetUUID = false">取消</Button>
-      </div>
-    </Modal>
     <!-- 对话框-authz检测结果 -->
     <Modal v-model="modalValidateAuthz" title="authz检测结果">
       <Input
@@ -629,106 +376,54 @@
         >
       </div>
     </Modal>
-    <!-- 对话框-仓库导入错误 -->
-    <Modal v-model="modalRepLoad" :draggable="true" title="仓库导入错误">
+    <RepoPermission
+      :visible="modalRepPri"
+      :current-rep-name="currentRepName"
+      :current-rep-path="currentRepPath"
+      :svnn-user-pri-path-id="svnn_user_pri_path_id"
+      @close="CloseModalRepPri"
+      @path-change="ChangeCurrentRepPath"
+    />
+    <Modal
+      v-model="deleteConfirm.visible"
+      title="删除仓库"
+      :draggable="true"
+      class-name="delete-confirm-modal"
+      @on-visible-change="handleDeleteConfirmVisible"
+    >
+      <Alert type="error" show-icon>
+        删除仓库不可逆。请输入仓库名以确认删除。
+      </Alert>
+      <div class="delete-confirm-repo">
+        <span>目标仓库</span>
+        <strong>{{ deleteConfirm.repName }}</strong>
+      </div>
       <Input
-        v-model="tempRepLoadError"
-        readonly
-        :rows="15"
-        show-word-limit
-        type="textarea"
+        v-model="deleteConfirm.input"
+        :placeholder="'请输入 ' + deleteConfirm.repName"
+        @on-enter="ConfirmDeleteRep"
       />
       <div slot="footer">
-        <Button type="primary" ghost @click="modalRepLoad = false">取消</Button>
+        <Button @click="deleteConfirm.visible = false">取消</Button>
+        <Button
+          type="error"
+          :loading="deleteConfirm.loading"
+          :disabled="deleteConfirm.input !== deleteConfirm.repName"
+          @click="ConfirmDeleteRep"
+        >
+          确认删除
+        </Button>
       </div>
     </Modal>
-    <!-- 对话框-备份文件上传 -->
-    <Modal
-      v-model="modalRepUpload"
-      :draggable="true"
-      title="仓库备份文件上传"
-      @on-visible-change="ChangeModalVisible"
-    >
-      <Form :label-width="80">
-        <FormItem label="上传文件">
-          <Button
-            type="primary"
-            icon="ios-cloud-upload-outline"
-            ghost
-            @click="ClickRepUpload"
-            >选择文件</Button
-          >
-          <input
-            type="file"
-            id="myfile"
-            name="myfile"
-            accept=".dump"
-            style="display: none"
-          />
-        </FormItem>
-        <FormItem label="上传进度">
-          <Progress
-            :percent="file.percent"
-            :stroke-width="20"
-            status="active"
-          />
-        </FormItem>
-        <FormItem label="文件名称"
-          ><span style="color: #2d8cf0">{{ file.name }}</span>
-        </FormItem>
-        <FormItem label="上传体积">
-          <span style="color: #2d8cf0">{{ file.size }}</span></FormItem
-        >
-        <FormItem label="当前阶段">
-          <span style="color: red">{{ file.desc }}</span>
-        </FormItem>
-        <FormItem label="分片大小">
-          <span style="color: #2d8cf0">{{ file.chunkSize }} MB</span>
-        </FormItem>
-        <FormItem label="剩余时间">
-          <span style="color: #2d8cf0">{{ file.left }}</span></FormItem
-        >
-        <FormItem label="分片清理">
-          <span style="color: #2d8cf0">{{
-            file.deleteOnMerge == 1
-              ? "合并完成后服务器自动删除分片"
-              : "合并完成后服务器不自动删除分片"
-          }}</span>
-        </FormItem>
-        <FormItem label="上传控制">
-          <Button
-            type="primary"
-            ghost
-            v-if="!file.stop"
-            @click="file.stop = true"
-            >暂停</Button
-          >
-          <span v-else style="color: red"
-            >暂停后需要重新选择文件-已上传分片依然有效</span
-          >
-        </FormItem>
-      </Form>
-      <div slot="footer">
-        <Button type="primary" ghost @click="ClickModalRepLoad">取消</Button>
-      </div>
-    </Modal>
-    <!-- 对话框-仓库权限配置 -->
-    <ModalRepPri
-      :propCurrentRepName="currentRepName"
-      :propCurrentRepPath="currentRepPath"
-      :propModalRepPri="modalRepPri"
-      :propChangeParentModalVisible="CloseModalRepPri"
-      :propChangeParentCurrentRepPath="ChangeCurrentRepPath"
-      :propSvnnUserPriPathId="svnn_user_pri_path_id"
-    />
   </div>
 </template>
 
 <script>
-//SVN对象列表组件
-import ModalRepPri from "@/components/modalRepPri.vue";
-
-import SparkMD5 from "spark-md5";
+import ServiceStatusBanner from "@/components/ServiceStatusBanner.vue";
+import RepoAdvancedSettings from "./components/RepoAdvancedSettings.vue";
+import RepoExplorer from "./components/RepoExplorer.vue";
+import RepoHookManager from "./components/RepoHookManager.vue";
+import RepoPermission from "./components/RepoPermission.vue";
 
 export default {
   data() {
@@ -746,29 +441,11 @@ export default {
 
       /**
        * 对话框
-       */
+      */
       //新建SVN仓库
       modalCreateRep: false,
-      //浏览仓库
-      modalViewRep: false,
-      //仓库钩子配置
-      modalRepHooks: false,
-      //高级
-      modalRepAdvance: false,
-      //仓库导入错误
-      modalRepLoad: false,
-      //仓库备份上传
-      modalRepUpload: false,
       //编辑仓库信息
       modalEditRepName: false,
-      //编辑仓库钩子内容
-      modalEditRepHook: false,
-      //查看钩子模板内容
-      modalStudyRepHook: false,
-      //常看常用钩子内容
-      modalRecommendHook: false,
-      //重设仓库UUID
-      modalSetUUID: false,
       //显示authz检测结果
       modalValidateAuthz: false,
       //仓库权限
@@ -801,11 +478,16 @@ export default {
        * 搜索关键词
        */
       searchKeywordRep: "",
-
-      /**
-       * 表格无数据提示
-       */
-      noDataTextRepCon: "暂无数据",
+      repoSuggestions: [],
+      repoSuggestVisible: false,
+      repoSuggestLoading: false,
+      repoSuggestActiveIndex: -1,
+      repoSuggestTimer: null,
+      repoSuggestDebounceDelay: 300,
+      repoSuggestRequestKeyword: "",
+      highlightedRepName: "",
+      noteSavingMap: {},
+      noteSavedMap: {},
 
       /**
        * 加载
@@ -816,31 +498,8 @@ export default {
       loadingCreateRep: false,
       //用户仓库列表
       loadingUserRep: true,
-      //仓库内容列表
-      loadingRepCon: true,
-
-      //去除路径的用户权限
-      loadingDelRepPathUserPri: false,
-      //删除仓库路径的分组权限
-      loadingDelRepPathGroupPri: false,
-      //获取仓库的详细信息
-      loadingRepDetail: true,
-      //获取仓库的备份文件夹文件内容
-      loadingRepBackupList: true,
-      //备份仓库按钮
-      loadingRepDump: false,
-      //上传备份文件
-      loadingUploadBackup: false,
-      //导入备份文件
-      loadingLoadBackup: [],
       //修改仓库名称
       loadingEditRepName: false,
-      //获取仓库钩子信息
-      loadingGetRepHooks: true,
-      //编辑仓库内容
-      loadingEditRepHook: false,
-      //重设仓库UUID
-      loadingSetUUID: false,
 
       /**
        * 临时变量
@@ -851,53 +510,14 @@ export default {
       currentRepPath: "",
       //选中的id
       svnn_user_pri_path_id: -1,
-      //仓库导入错误信息
-      tempRepLoadError: "",
-      //高级选项tab
-      curTabRepAdvance: "attribute",
-      //检出路径
-      tempCheckout: "",
-      //单选 仓库路径的用户权限列表
-      radioRepUserPri: "",
-      //单选 仓库路径的分组权限列表
-      radioRepGroupPri: "",
-      //仓库路径的分组权限列表 当前选中的分组以及下标
-      currentRepPriGroup: "",
-      currentRepPriGroupIndex: -1,
-      //仓库路径的权限新增用户列表 当前选中的用户
-      currentRepPriAddUser: "",
-      //仓库路径的权限新增分组列表 当前选中的分组
-      currentRepPriAddGroup: "",
-      //仓库钩子名称
-      tempSelectRepHook: "",
-      //仓库钩子内容
-      tempSelectRepHookCon: "",
-      //钩子模板内容
-      tempSelectRepHookTmpl: "",
-      //常用钩子内容查看
-      tempSelectRepHookRecommend: "",
-      //仓库重设UUID
-      tempRepUUID: "",
       //authz检测结果
       tempmodalValidateAuthz: "",
-      //当前选中的分组名
-      currentSelectGroupName: "",
 
       /**
        * 对话框标题
        */
-      //浏览仓库内容
-      titleModalViewRep: "",
-      //仓库钩子
-      titleModalRepHooks: "",
       //编辑仓库名称
       titleModalEditRepName: "",
-      //高级
-      titleModalRepAdvance: "",
-      //钩子文件编辑
-      titleModalEditRepHook: "",
-      //钩子文件模板
-      titleModalStudyRepHook: "",
 
       /**
        * 表单
@@ -913,68 +533,17 @@ export default {
         old_rep_name: "",
         new_rep_name: "",
       },
-      //钩子结构
-      formRepHooks: {
-        start_commit: { fileName: "", hasFile: false, con: "", tmpl: "" },
-        pre_commit: { fileName: "", hasFile: false, con: "", tmpl: "" },
-        post_commit: { fileName: "", hasFile: false, con: "", tmpl: "" },
-        pre_lock: { fileName: "", hasFile: false, con: "", tmpl: "" },
-        post_lock: { fileName: "", hasFile: false, con: "", tmpl: "" },
-        pre_unlock: { fileName: "", hasFile: false, con: "", tmpl: "" },
-        post_unlock: { fileName: "", hasFile: false, con: "", tmpl: "" },
-        pre_revprop_change: { fileName: "", hasFile: false, con: "", tmpl: "" },
-        post_revprop_change: {
-          fileName: "",
-          hasFile: false,
-          con: "",
-          tmpl: "",
-        },
-      },
       //页头提示信息
       formStatusSubversion: {
         status: true,
         info: "",
       },
-      //目录浏览的检出地址
-      checkInfo: {
-        protocal: "",
-        prefix: "",
+      deleteConfirm: {
+        visible: false,
+        repName: "",
+        input: "",
+        loading: false,
       },
-      //文件上传相关
-      file: {
-        //文件上传功能开启状态
-        on: true,
-        // 分片上传大小 MB
-        chunkSize: 1,
-        // 分片总数
-        chunkCount: 0,
-        // 分片合并后删除分片
-        deleteOnMerge: 1,
-        //文件上传进度条
-        current: 0,
-        total: 0,
-        percent: 0,
-        //文件名称
-        name: "",
-        //上传状态
-        desc: "",
-        //文件体积
-        size: "",
-        //文件md5
-        md5: "",
-        //预估时间
-        left: "",
-        //是否停止上传
-        stop: false,
-      },
-
-      /**
-       * 浏览仓库面包屑
-       */
-      breadRepPath: [],
-
-      //常用钩子列表
-      recommendHooks: [],
 
       /**
        * 表格
@@ -1072,144 +641,256 @@ export default {
         },
       ],
       tableDataUserRep: [],
-      //仓库内容浏览
-      tableColumnRepCon: [
-        {
-          title: "类型",
-          slot: "resourceType",
-          width: 70,
-          align: 'center'
-        },
-        {
-          title: "名称",
-          slot: "resourceName",
-          minWidth: 200,
-        },
-        {
-          title: "版本/作者",
-          slot: "revInfo",
-          width: 180,
-        },
-        {
-          title: "体积",
-          key: "fileSize",
-          width: 100,
-        },
-        {
-          title: "最后修改日期",
-          key: "revTime",
-          width: 180,
-        },
-        {
-          title: "提交日志",
-          key: "revLog",
-          tooltip: true,
-          minWidth: 150,
-        },
-      ],
-      tableDataRepCon: [],
-      //备份文件
-      tableColumnBackup: [
-        {
-          title: "文件名",
-          key: "fileName",
-          tooltip: true,
-        },
-        {
-          title: "大小",
-          key: "fileSize",
-          tooltip: true,
-        },
-        {
-          title: "修改时间",
-          key: "fileEditTime",
-          tooltip: true,
-        },
-        {
-          title: "其它",
-          slot: "action",
-          width: 200,
-        },
-      ],
-      tableDataBackup: [],
-      //某节点的用户权限
-      tableColumnRepPathUserPri: [
-        {
-          title: "用户名",
-          key: "userName",
-        },
-        {
-          title: "权限",
-          key: "userPri",
-        },
-      ],
-      tableDataRepPathUserPri: [],
-      //某节点的分组权限
-      tableColumnRepPathGroupPri: [
-        {
-          title: "分组名",
-          key: "groupName",
-        },
-        {
-          title: "权限",
-          key: "groupPri",
-        },
-      ],
-      tableDataRepPathGroupPri: [],
-
-      //仓库的详细信息 uuid等
-      tableColumnRepDetail: [
-        {
-          title: "属性",
-          key: "repKey",
-          tooltip: true,
-          fixed: "left",
-          width: 170,
-          // width:80
-        },
-        {
-          title: "信息",
-          key: "repValue",
-          tooltip: true,
-          width: 170,
-        },
-        {
-          title: "复制",
-          slot: "copy",
-          width: 60,
-        },
-        {
-          title: "重设",
-          slot: "uuid",
-        },
-      ],
-      tableDataRepDetail: [],
-      
-
     };
   },
   components: {
-    ModalRepPri,
+    ServiceStatusBanner,
+    RepoAdvancedSettings,
+    RepoExplorer,
+    RepoHookManager,
+    RepoPermission,
   },
-  computed: {},
+  computed: {
+    serviceStatusItems() {
+      return [
+        {
+          key: "svnserve",
+          type: "error",
+          visible: this.formStatusSubversion.status == false,
+          message: this.formStatusSubversion.info,
+        },
+      ];
+    },
+  },
 
   mounted() {
     this.GetSvnserveStatus();
     this.loadColumnWidths();
     if (this.user_role_id == 1 || this.user_role_id == 3) {
       this.GetRepList();
-
-      //高级选项
-      if (!sessionStorage.curTabRepAdvance) {
-        sessionStorage.setItem("curTabRepAdvance", "attribute");
-      } else {
-        this.curTabRepAdvance = sessionStorage.curTabRepAdvance;
-      }
     } else if (this.user_role_id == 2) {
       this.GetSvnUserRepList();
     }
   },
   methods: {
+    submitRepoSearch() {
+      this.closeRepoSuggestions();
+      if (this.user_role_id == 1 || this.user_role_id == 3) {
+        this.pageCurrentRep = 1;
+        this.GetRepList();
+      } else {
+        this.pageCurrentUserRep = 1;
+        this.GetSvnUserRepList();
+      }
+    },
+    openRepoSuggestions() {
+      if (this.searchKeywordRep) {
+        this.handleRepoSuggestInput();
+      }
+    },
+    closeRepoSuggestions() {
+      this.repoSuggestVisible = false;
+      this.repoSuggestActiveIndex = -1;
+    },
+    handleRepoSuggestInput() {
+      clearTimeout(this.repoSuggestTimer);
+      const keyword = String(this.searchKeywordRep || "").trim();
+      if (!keyword) {
+        this.repoSuggestions = [];
+        this.closeRepoSuggestions();
+        return;
+      }
+      this.repoSuggestVisible = true;
+      this.repoSuggestTimer = setTimeout(() => {
+        this.loadRepoSuggestions(keyword);
+      }, this.repoSuggestDebounceDelay);
+    },
+    handleRepoSuggestKeydown(event) {
+      if (!this.repoSuggestVisible) {
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        if (this.repoSuggestions.length > 0) {
+          this.repoSuggestActiveIndex =
+            (this.repoSuggestActiveIndex + 1) % this.repoSuggestions.length;
+        }
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        if (this.repoSuggestions.length > 0) {
+          this.repoSuggestActiveIndex =
+            (this.repoSuggestActiveIndex - 1 + this.repoSuggestions.length) %
+            this.repoSuggestions.length;
+        }
+      } else if (event.key === "Enter") {
+        if (this.repoSuggestActiveIndex >= 0 && this.repoSuggestions[this.repoSuggestActiveIndex]) {
+          event.preventDefault();
+          this.selectRepoSuggestion(this.repoSuggestions[this.repoSuggestActiveIndex]);
+        }
+      } else if (event.key === "Escape") {
+        this.closeRepoSuggestions();
+      }
+    },
+    loadRepoSuggestions(keyword) {
+      this.repoSuggestRequestKeyword = keyword;
+      const localRows = this.getCurrentRepoRows();
+      const localSuggestions = this.rankRepoSuggestions(localRows, keyword);
+      this.repoSuggestions = localSuggestions.slice(0, 10);
+      this.repoSuggestActiveIndex = this.repoSuggestions.length > 0 ? 0 : -1;
+
+      if (keyword.length < 2) {
+        return;
+      }
+
+      this.repoSuggestLoading = true;
+      const isAdmin = this.user_role_id == 1 || this.user_role_id == 3;
+      const data = isAdmin
+        ? {
+            pageSize: 10,
+            currentPage: 1,
+            searchKeyword: keyword,
+            sortName: this.sortNameGetRepList,
+            sortType: this.sortTypeGetRepList,
+            sync: false,
+            page: true,
+            sync_size: false,
+            sync_rev: false,
+          }
+        : {
+            pageSize: 10,
+            currentPage: 1,
+            searchKeyword: keyword,
+            sortType: this.sortTypeGetSvnUserRepList,
+            sync: false,
+            page: true,
+          };
+
+      this.$axios
+        .post(
+          isAdmin
+            ? "api.php?c=Svnrep&a=GetRepList&t=web"
+            : "api.php?c=Svnrep&a=GetSvnUserRepList&t=web",
+          data
+        )
+        .then((response) => {
+          if (this.repoSuggestRequestKeyword !== keyword) {
+            return;
+          }
+          this.repoSuggestLoading = false;
+          const result = response.data;
+          if (result.status == 1) {
+            const remoteRows = (result.data && result.data.data) || [];
+            const merged = this.mergeRepoSuggestions(localSuggestions, remoteRows);
+            this.repoSuggestions = this.rankRepoSuggestions(merged, keyword).slice(0, 10);
+            this.repoSuggestActiveIndex = this.repoSuggestions.length > 0 ? 0 : -1;
+          }
+        })
+        .catch((error) => {
+          if (this.repoSuggestRequestKeyword !== keyword) {
+            return;
+          }
+          this.repoSuggestLoading = false;
+          console.log(error);
+        });
+    },
+    getCurrentRepoRows() {
+      return this.user_role_id == 1 || this.user_role_id == 3
+        ? this.tableDataRep || []
+        : this.tableDataUserRep || [];
+    },
+    mergeRepoSuggestions(localRows, remoteRows) {
+      const map = {};
+      localRows.concat(remoteRows || []).forEach((item) => {
+        if (item && item.rep_name) {
+          map[item.rep_name] = Object.assign({}, map[item.rep_name] || {}, item);
+        }
+      });
+      return Object.keys(map).map((key) => map[key]);
+    },
+    rankRepoSuggestions(rows, keyword) {
+      const q = String(keyword || "").toLowerCase();
+      return (rows || [])
+        .map((row) => {
+          const name = String(row.rep_name || "").toLowerCase();
+          const note = String(row.rep_note || "").toLowerCase();
+          let score = -1;
+          let matchLabel = "";
+          if (name === q) {
+            score = 100;
+            matchLabel = "完全匹配";
+          } else if (name.indexOf(q) === 0) {
+            score = 80;
+            matchLabel = "名称前缀";
+          } else if (name.indexOf(q) > -1) {
+            score = 60;
+            matchLabel = "名称包含";
+          } else if (note.indexOf(q) > -1) {
+            score = 40;
+            matchLabel = "备注";
+          }
+          return Object.assign({}, row, { _suggestScore: score, matchLabel: matchLabel });
+        })
+        .filter((row) => row._suggestScore >= 0)
+        .sort((a, b) => {
+          if (b._suggestScore !== a._suggestScore) {
+            return b._suggestScore - a._suggestScore;
+          }
+          return String(a.rep_name || "").localeCompare(String(b.rep_name || ""));
+        });
+    },
+    escapeHtml(value) {
+      return String(value == null ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    },
+    escapeRegExp(value) {
+      return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    },
+    highlightSuggestText(value) {
+      const text = this.escapeHtml(value);
+      const keyword = String(this.searchKeywordRep || "").trim();
+      if (!keyword) {
+        return text;
+      }
+      const pattern = new RegExp("(" + this.escapeRegExp(this.escapeHtml(keyword)) + ")", "ig");
+      return text.replace(pattern, '<mark class="suggest-highlight">$1</mark>');
+    },
+    selectRepoSuggestion(item) {
+      if (!item || !item.rep_name) {
+        return;
+      }
+      this.searchKeywordRep = item.rep_name;
+      this.closeRepoSuggestions();
+      const existsInCurrentPage = this.getCurrentRepoRows().some((row) => row.rep_name === item.rep_name);
+      if (existsInCurrentPage) {
+        this.highlightRepoRow(item.rep_name);
+        return;
+      }
+      if (this.user_role_id == 1 || this.user_role_id == 3) {
+        this.pageCurrentRep = 1;
+        this.GetRepList();
+      } else {
+        this.pageCurrentUserRep = 1;
+        this.GetSvnUserRepList();
+      }
+      this.$nextTick(() => {
+        setTimeout(() => this.highlightRepoRow(item.rep_name), 600);
+      });
+    },
+    highlightRepoRow(repName) {
+      this.highlightedRepName = repName;
+      setTimeout(() => {
+        if (this.highlightedRepName === repName) {
+          this.highlightedRepName = "";
+        }
+      }, 2200);
+    },
+    getRepoRowClassName(row) {
+      return row && row.rep_name === this.highlightedRepName ? "repo-row-highlight" : "";
+    },
     /**
      * 列宽调整相关方法
      */
@@ -1217,7 +898,7 @@ export default {
       // 保存列宽到本地存储
       this.saveColumnWidth(column.key || column.slot, newWidth);
     },
-    
+
     loadColumnWidths() {
       // 从本地存储加载列宽设置
       const savedWidths = localStorage.getItem('svn_repository_column_widths');
@@ -1227,7 +908,7 @@ export default {
           this.tableColumnRep.forEach(column => {
             const key = column.key || column.slot;
             if (widths[key] && column.resizable !== false) {
-              column.width = widths[key];
+              this.$set(column, "width", widths[key]);
             }
           });
         } catch (e) {
@@ -1235,8 +916,11 @@ export default {
         }
       }
     },
-    
+
     saveColumnWidth(columnKey, width) {
+      if (!columnKey || !width) {
+        return;
+      }
       // 保存单个列宽到本地存储
       const savedWidths = localStorage.getItem('svn_repository_column_widths');
       let widths = {};
@@ -1281,69 +965,24 @@ export default {
     ChangeCurrentRepPath(value) {
       this.currentRepPath = value;
     },
-
-    /**
-     * 秒单位格式化
-     */
-    FormatTime(seconds) {
-      let h = parseInt((seconds / 60 / 60) % 24);
-      h = h < 10 ? "0" + h : h;
-      let m = parseInt((seconds / 60) % 60);
-      m = m < 10 ? "0" + m : m;
-      let s = parseInt(seconds % 60);
-      s = s < 10 ? "0" + s : s;
-      // 作为返回值返回
-      return [h, m, s];
-    },
-    /**
-     * 文件体积单位格式化
-     */
-    FormatFileSize(fileSize) {
-      if (fileSize < 1024) {
-        return fileSize + "B";
-      } else if (fileSize < 1024 * 1024) {
-        var temp = fileSize / 1024;
-        temp = temp.toFixed(2);
-        return temp + "KB";
-      } else if (fileSize < 1024 * 1024 * 1024) {
-        var temp = fileSize / (1024 * 1024);
-        temp = temp.toFixed(2);
-        return temp + "MB";
-      } else {
-        var temp = fileSize / (1024 * 1024 * 1024);
-        temp = temp.toFixed(2);
-        return temp + "GB";
+    OpenRepoHookManager(repName) {
+      if (this.$refs.repoHookManager) {
+        this.$refs.repoHookManager.open(repName);
       }
     },
-
-    /**
-     * 退出文件上传对话框
-     */
-    ChangeModalVisible(value) {
-      if (!value) {
-        this.modalRepUpload = false;
-        this.file.stop = true;
+    OpenRepoExplorer(repName) {
+      if (this.$refs.repoExplorer) {
+        this.$refs.repoExplorer.openAdmin(repName);
       }
     },
-    ClickModalRepLoad() {
-      this.modalRepUpload = false;
-      this.file.stop = true;
+    OpenRepoExplorerUser(repName, priPath) {
+      if (this.$refs.repoExplorer) {
+        this.$refs.repoExplorer.openUser(repName, priPath);
+      }
     },
-
-    //高级选项切换
-    ClickTabAdvance(name) {
-      sessionStorage.setItem("curTabRepAdvance", name);
-
-      switch (name) {
-        case "attribute":
-          this.GetRepDetail();
-          break;
-        case "backup":
-          this.GetUploadInfo();
-          this.GetBackupList();
-          break;
-        default:
-          break;
+    OpenRepoExplorerRaw(rowUrl) {
+      if (this.$refs.repoExplorer) {
+        this.$refs.repoExplorer.openRaw(rowUrl);
       }
     },
 
@@ -1634,586 +1273,42 @@ export default {
      */
     UpdRepNote(index, rep_name) {
       var that = this;
+      if (that.noteSavingMap[rep_name] || !that.tableDataRep[index]) {
+        return;
+      }
       var data = {
         rep_name: rep_name,
         rep_note: that.tableDataRep[index].rep_note,
       };
+      that.$set(that.noteSavingMap, rep_name, true);
       that.$axios
         .post("api.php?c=Svnrep&a=UpdRepNote&t=web", data)
         .then(function (response) {
           var result = response.data;
           if (result.status == 1) {
             that.$Message.success(result.message);
+            that.$set(that.noteSavedMap, rep_name, true);
+            setTimeout(() => {
+              that.$set(that.noteSavedMap, rep_name, false);
+            }, 1600);
           } else {
             that.$Message.error({ content: result.message, duration: 2 });
           }
+          that.$set(that.noteSavingMap, rep_name, false);
         })
         .catch(function (error) {
           console.log(error);
           that.$Message.error("出错了 请联系管理员！");
+          that.$set(that.noteSavingMap, rep_name, false);
         });
     },
+    isRepNoteSaving(rep_name) {
+      return !!this.noteSavingMap[rep_name];
+    },
+    isRepNoteSaved(rep_name) {
+      return !!this.noteSavedMap[rep_name];
+    },
 
-    /**
-     * 管理人员浏览仓库
-     */
-    ModalViewRep(rep_name) {
-      var that = this;
-      //还原表格为空提示内容
-      that.noDataTextRepCon = "暂无数据";
-      //通过按钮点击浏览 初始化路径和仓库名称
-      that.currentRepPath = "/";
-      that.currentRepName = rep_name;
-      //设置标题
-      that.titleModalViewRep = "仓库内容 - " + rep_name;
-      //显示对话框
-      that.modalViewRep = true;
-      //请求检出地址信息
-      that.GetCheckout().then(function (response) {
-        //在检出地址的成功回调中开始请求仓库内容
-        that.GetRepCon();
-      });
-    },
-    /**
-     * 用户浏览仓库
-     */
-    ModalViewUserRep(rep_name, pri_path) {
-      var that = this;
-      //还原表格为空提示内容
-      that.noDataTextRepCon = "暂无数据";
-      //通过按钮点击浏览 初始化路径和仓库名称
-      that.currentRepPath = pri_path;
-      that.currentRepName = rep_name;
-      //设置标题
-      that.titleModalViewRep = "仓库内容 - " + rep_name;
-      //显示对话框
-      that.modalViewRep = true;
-      //请求检出地址信息
-      that.GetCheckout().then(function (response) {
-        //在检出地址的成功回调中开始请求仓库内容
-        if (that.formStatusSubversion.status == true) {
-          that.GetUserRepCon();
-        } else {
-          that.loadingRepCon = false;
-          //设置表格提示信息
-          that.noDataTextRepCon =
-            "由于svnserve服务未启动，SVN用户只能复制检出地址而不能进行仓库内容浏览";
-          //更新检出地址
-          that.tempCheckout = that.BuildCheckoutUrl();
-        }
-      });
-    },
-    /**
-     * 用户通过http提供的能力直接浏览
-     */
-    ModalViewUserRepRaw(row_url) {
-      window.open(this.ResolveCheckoutUrl(row_url), "_blank");
-    },
-    /**
-     * 获取检出地址前缀
-     */
-    GetCheckout() {
-      var that = this;
-      //清空之前的检出地址
-      that.tempCheckout = "";
-      //清空之前的表格内容
-      that.tableDataRepCon = [];
-      //清空之前的面包屑
-      that.breadRepPath = [];
-      //重置加载动画
-      that.loadingRepCon = true;
-      var data = {};
-      return new Promise(function (resolve, reject) {
-        that.$axios
-          .post("api.php?c=Svnrep&a=GetCheckout&t=web", data)
-          .then(function (response) {
-            var result = response.data;
-            if (result.status == 1) {
-              that.checkInfo = result.data;
-            } else {
-              that.loadingRepCon = false;
-              that.$Message.error({ content: result.message, duration: 2 });
-            }
-            resolve(response);
-          })
-          .catch(function (error) {
-            console.log(error);
-            that.$Message.error("出错了 请联系管理员！");
-            reject(error);
-          });
-      });
-    },
-    /**
-     * 使用当前访问主机修正浏览/复制地址中的本机地址
-     */
-    IsLocalCheckoutHost(host) {
-      return (
-        host == "localhost" ||
-        host == "0.0.0.0" ||
-        host == "::1" ||
-        host == "[::1]" ||
-        /^127\./.test(host)
-      );
-    },
-    ResolveCheckoutProtocol(protocol, prefix) {
-      var originalProtocol = protocol || "";
-      if (
-        typeof window === "undefined" ||
-        originalProtocol.indexOf("http") !== 0 ||
-        !/^https?:$/.test(window.location.protocol)
-      ) {
-        return originalProtocol;
-      }
-
-      try {
-        var url = new URL(originalProtocol + String(prefix || ""));
-        return this.IsLocalCheckoutHost(url.hostname)
-          ? window.location.protocol + "//"
-          : originalProtocol;
-      } catch (e) {
-        return originalProtocol;
-      }
-    },
-    ResolveCheckoutPrefix(protocol, prefix) {
-      var originalPrefix = String(prefix || "");
-      if (typeof window === "undefined" || originalPrefix == "") {
-        return originalPrefix;
-      }
-
-      try {
-        var url = new URL((protocol || "http://") + originalPrefix);
-        if (!this.IsLocalCheckoutHost(url.hostname)) {
-          return originalPrefix;
-        }
-
-        var pathPrefix = url.pathname == "/" ? "" : url.pathname.replace(/\/+$/, "");
-        if ((protocol || "").indexOf("http") === 0) {
-          return window.location.host + pathPrefix;
-        }
-
-        var browserHost = window.location.hostname;
-        if (browserHost.indexOf(":") >= 0 && browserHost.charAt(0) != "[") {
-          browserHost = "[" + browserHost + "]";
-        }
-        return browserHost + (url.port ? ":" + url.port : "") + pathPrefix;
-      } catch (e) {
-        return originalPrefix;
-      }
-    },
-    ResolveCheckoutUrl(checkoutUrl) {
-      var originalUrl = String(checkoutUrl || "");
-      if (typeof window === "undefined" || originalUrl == "") {
-        return originalUrl;
-      }
-
-      try {
-        var url = new URL(originalUrl);
-        if (!this.IsLocalCheckoutHost(url.hostname)) {
-          return originalUrl;
-        }
-
-        var protocol = url.protocol + "//";
-        var prefix = url.host + url.pathname;
-        return (
-          this.ResolveCheckoutProtocol(protocol, prefix) +
-          this.ResolveCheckoutPrefix(protocol, prefix).replace(/\/+$/, "") +
-          url.search +
-          url.hash
-        );
-      } catch (e) {
-        return originalUrl;
-      }
-    },
-    BuildCheckoutUrl() {
-      var rawProtocol = (this.checkInfo && this.checkInfo.protocal) || "";
-      var rawPrefix = (this.checkInfo && this.checkInfo.prefix) || "";
-      var protocol = this.ResolveCheckoutProtocol(rawProtocol, rawPrefix);
-      var prefix = this.ResolveCheckoutPrefix(
-        rawProtocol,
-        rawPrefix
-      ).replace(/\/+$/, "");
-      var repPath = this.currentRepPath || "/";
-      if (repPath.charAt(0) != "/") {
-        repPath = "/" + repPath;
-      }
-      return protocol + prefix + "/" + this.currentRepName + repPath;
-    },
-    /**
-     * 获取仓库内容
-     */
-    GetRepCon() {
-      var that = this;
-      that.loadingRepCon = true;
-      var data = {
-        rep_name: that.currentRepName,
-        path: that.currentRepPath,
-      };
-      that.$axios
-        .post("api.php?c=Svnrep&a=GetRepCon&t=web", data)
-        .then(function (response) {
-          that.loadingRepCon = false;
-          var result = response.data;
-          if (result.status == 1) {
-            that.tableDataRepCon = result.data.data;
-            that.breadRepPath = result.data.bread;
-            //更新检出地址
-            that.tempCheckout = that.BuildCheckoutUrl();
-          } else {
-            that.$Message.error({ content: result.message, duration: 2 });
-          }
-        })
-        .catch(function (error) {
-          that.loadingRepCon = false;
-          console.log(error);
-          that.$Message.error("出错了 请联系管理员！");
-        });
-    },
-    /**
-     * 获取用户仓库内容
-     */
-    GetUserRepCon() {
-      var that = this;
-      that.loadingRepCon = true;
-      var data = {
-        rep_name: that.currentRepName,
-        path: that.currentRepPath,
-      };
-      that.$axios
-        .post("api.php?c=Svnrep&a=GetUserRepCon&t=web", data)
-        .then(function (response) {
-          that.loadingRepCon = false;
-          var result = response.data;
-          if (result.status == 1) {
-            that.tableDataRepCon = result.data.data;
-            that.breadRepPath = result.data.bread;
-            //更新检出地址
-            that.tempCheckout = that.BuildCheckoutUrl();
-          } else {
-            that.$Message.error({ content: result.message, duration: 2 });
-          }
-        })
-        .catch(function (error) {
-          that.loadingRepCon = false;
-          console.log(error);
-          that.$Message.error("出错了 请联系管理员！");
-        });
-    },
-    /**
-     * 点击某行获取仓库路径内容
-     */
-    ClickRowGetRepCon(row, index) {
-      if (this.tableDataRepCon[index].resourceType == "2") {
-        this.currentRepPath = this.tableDataRepCon[index].fullPath;
-        if (this.user_role_id == 1 || this.user_role_id == 3) {
-          this.GetRepCon();
-        } else if (this.user_role_id == 2) {
-          this.GetUserRepCon();
-        }
-      }
-    },
-    /**
-     * 点击面包屑获取仓库路径内容
-     */
-    ClickBreadGetRepCon(fullPath) {
-      this.currentRepPath = fullPath;
-      if (this.user_role_id == 1 || this.user_role_id == 3) {
-        this.GetRepCon();
-      } else if (this.user_role_id == 2) {
-        this.GetUserRepCon();
-      }
-    },
-    /**
-     * 复制检出地址
-     */
-    CopyCheckout() {
-      var that = this;
-      that.$copyText(that.tempCheckout).then(
-        function (e) {
-          that.$Message.success("复制成功");
-        },
-        function (e) {
-          that.$Message.error("复制失败，请手动复制");
-        }
-      );
-    },
-    /**
-     * 获取备份文件夹下的文件列表
-     */
-    GetBackupList() {
-      var that = this;
-      that.loadingRepBackupList = true;
-      that.tableDataBackup = [];
-      var data = {};
-      that.$axios
-        .post("api.php?c=Svnrep&a=GetBackupList&t=web", data)
-        .then(function (response) {
-          that.loadingRepBackupList = false;
-          var result = response.data;
-          if (result.status == 1) {
-            that.tableDataBackup = result.data;
-            for (var i = 0; i < result.data.length; i++) {
-              that.loadingLoadBackup[i] = false;
-            }
-          } else {
-            that.$Message.error({ content: result.message, duration: 2 });
-          }
-        })
-        .catch(function (error) {
-          that.loadingRepBackupList = false;
-          console.log(error);
-          that.$Message.error("出错了 请联系管理员！");
-        });
-    },
-    //立即备份
-    SvnadminDump() {
-      var that = this;
-      that.loadingRepDump = true;
-      var data = {
-        rep_name: that.currentRepName,
-      };
-      that.$axios
-        .post("api.php?c=Svnrep&a=SvnadminDump&t=web", data)
-        .then(function (response) {
-          that.loadingRepDump = false;
-          var result = response.data;
-          if (result.status == 1) {
-            that.$Message.success(result.message);
-            that.GetBackupList();
-          } else {
-            that.$Message.error({ content: result.message, duration: 2 });
-          }
-        })
-        .catch(function (error) {
-          that.loadingRepDump = false;
-          console.log(error);
-          that.$Message.error("出错了 请联系管理员！");
-        });
-    },
-    //点击按钮 触发隐藏 input 的 click 事件
-    ClickRepUpload() {
-      let myfile = document.getElementById("myfile");
-      myfile.click();
-    },
-    //文件上传
-    ModalUploadBackup() {
-      //重置进度条
-      this.file.percent = 0;
-      this.file.current = 0;
-      //重置允许上传
-      this.file.stop = false;
-
-      this.modalRepUpload = true;
-      myfile.onchange = () => {
-        //重置进度条
-        this.file.percent = 0;
-        this.file.current = 0;
-        //重置允许上传
-        this.file.stop = false;
-
-        let myfile = document.getElementById("myfile");
-        let file = myfile.files[0];
-        this.ChangeUpload(file);
-      };
-    },
-    //文件上传统筹
-    async ChangeUpload(file) {
-      var that = this;
-      //文件大小
-      const fileSize = file.size;
-      //单个分片大小 1MB
-      const chunkSize = 1024 * 1024 * 1;
-      //分片数量
-      const chunkCount = Math.ceil(fileSize / chunkSize);
-      //总进度 = 分片 + 上传合并
-      that.file.total = chunkCount * 2;
-      // 分片总数
-      that.file.chunkCount = chunkCount;
-      //文件体积
-      that.file.size = that.FormatFileSize(fileSize);
-      //文件名
-      that.file.name = file.name;
-      //获取文件md5
-      const md5 = await that.GetFileMd5(file, chunkSize);
-      //循环调用上传
-      for (var i = 0; i < chunkCount; i++) {
-        //分片开始位置
-        let start = i * chunkSize;
-        //分片结束位置
-        let end = Math.min(fileSize, start + chunkSize);
-        let _chunkFile = file.slice(start, end);
-        let formdata = new FormData();
-        formdata.append("file", _chunkFile);
-        formdata.append("md5", md5);
-        formdata.append("filename", file.name);
-        formdata.append("numBlobTotal", chunkCount);
-        formdata.append("numBlobCurrent", i + 1);
-        formdata.append("deleteOnMerge", that.file.deleteOnMerge);
-
-        if (!that.file.stop) {
-          // 通过await实现顺序上传
-          await that
-            .UploadBackup(formdata)
-            .then(function (response) {
-              var result = response.data;
-              if (result.status == 1) {
-                if (result.data.completeCount == that.file.total / 2 - 1) {
-                  that.file.desc = "分片合并中";
-                } else if (result.data.completeCount == that.file.total / 2) {
-                  that.file.desc = "分片合并完成（上传成功）";
-                } else {
-                  // that.file.desc = "分片上传中";
-                  that.file.desc = `${that.file.chunkCount} 个分片上传中`;
-                }
-                if (result.data.complete) {
-                  //进度条百分比
-                  that.file.percent = 100;
-                  //剩余时间
-                  var formateTime = that.FormatTime(0);
-                  that.file.left = `${formateTime[0]}时${formateTime[1]}分${formateTime[2]}秒`;
-                  that.$Message.success(result.message);
-                  that.GetBackupList();
-                  that.file.stop = true;
-                } else {
-                  //进度条百分比
-                  that.file.current++;
-                  that.file.percent = Math.trunc(
-                    (that.file.current / that.file.total) * 100
-                  );
-                  //剩余时间
-                  var formateTime = that.FormatTime(
-                    that.file.total - that.file.current
-                  );
-                  that.file.left = `${formateTime[0]}时${formateTime[1]}分${formateTime[2]}秒`;
-                }
-              } else {
-                that.file.stop = true;
-                that.$Message.error({
-                  content: result.message,
-                  duration: 2,
-                });
-              }
-            })
-            .catch(function (error) {
-              that.file.stop = true;
-              console.log(error);
-              that.$Message.error("出错了 请联系管理员！");
-            });
-        }
-
-        if (that.file.stop) {
-          break;
-        }
-      }
-    },
-    //分片上传接口
-    UploadBackup(data) {
-      var that = this;
-      var config = {
-        headers: { "Content-Type": "multipart/form-data" },
-      };
-      return new Promise(function (resolve, reject) {
-        that.$axios
-          .post("api.php?c=Svnrep&a=UploadBackup&t=web", data, config)
-          .then(function (response) {
-            resolve(response);
-          })
-          .catch(function (error) {
-            reject(error);
-          });
-      });
-    },
-    //计算md5
-    GetFileMd5(file, chunkSize) {
-      let that = this;
-      return new Promise((resolve, reject) => {
-        let blobSlice =
-          File.prototype.slice ||
-          File.prototype.mozSlice ||
-          File.prototype.webkitSlice;
-        let chunks = Math.ceil(file.size / chunkSize);
-        let currentChunk = 0;
-        let spark = new SparkMD5.ArrayBuffer();
-        let fileReader = new FileReader();
-
-        fileReader.onload = function (e) {
-          spark.append(e.target.result);
-          currentChunk++;
-          //开关控制
-          if (that.file.stop) {
-            return;
-          }
-          if (currentChunk < chunks) {
-            loadNext();
-          } else {
-            // 返回十六进制结果
-            let md5 = spark.end();
-            resolve(md5);
-          }
-        };
-
-        fileReader.onerror = function (e) {
-          reject(e);
-        };
-
-        function loadNext() {
-          let start = currentChunk * chunkSize;
-          let end = start + chunkSize;
-          end > file.size && (end = file.size);
-          fileReader.readAsArrayBuffer(blobSlice.call(file, start, end));
-
-          //进度条百分比
-          that.file.current++;
-          that.file.percent = Math.trunc(
-            (that.file.current / that.file.total) * 100
-          );
-          //剩余时间
-          var formateTime = that.FormatTime(
-            that.file.total - that.file.current
-          );
-          that.file.left = `${formateTime[0]}时${formateTime[1]}分${formateTime[2]}秒`;
-          //当前状态
-          that.file.desc = `${that.file.chunkCount} 个分片md5计算中`;
-        }
-
-        loadNext();
-      });
-    },
-    /**
-     * 下载备份文件
-     */
-    DownloadRepBackup(fileUrl) {
-      window.open(fileUrl, "_blank");
-    },
-    /**
-     * 删除备份文件
-     */
-    DelRepBackup(fileName) {
-      var that = this;
-      that.$Modal.confirm({
-        title: "删除文件",
-        content: "确定要删除该文件吗？<br/>该操作不可逆！",
-        onOk: () => {
-          var data = {
-            fileName: fileName,
-          };
-          that.$axios
-            .post("api.php?c=Svnrep&a=DelRepBackup&t=web", data)
-            .then(function (response) {
-              var result = response.data;
-              if (result.status == 1) {
-                that.$Message.success(result.message);
-                that.GetBackupList();
-              } else {
-                that.$Message.error({ content: result.message, duration: 2 });
-              }
-            })
-            .catch(function (error) {
-              console.log(error);
-              that.$Message.error("出错了 请联系管理员！");
-            });
-        },
-      });
-    },
     /**
      * 仓库权限
      */
@@ -2239,324 +1334,12 @@ export default {
     },
 
     /**
-     * 仓库钩子
-     */
-    ModalRepHooks(rep_name) {
-      //设置标题
-      this.titleModalRepHooks = "仓库钩子 - " + rep_name;
-      //显示对话框
-      this.modalRepHooks = true;
-      //设置当前选中仓库
-      this.currentRepName = rep_name;
-      //请求仓库钩子数据
-      this.GetRepHooks();
-      //请求常用钩子列表
-      this.GetRecommendHooks();
-    },
-    /**
-     * 获取仓库的钩子和对应的内容列表
-     */
-    GetRepHooks() {
-      var that = this;
-      that.loadingGetRepHooks = true;
-      var data = {
-        rep_name: that.currentRepName,
-      };
-      that.$axios
-        .post("api.php?c=Svnrep&a=GetRepHooks&t=web", data)
-        .then(function (response) {
-          that.loadingGetRepHooks = false;
-          var result = response.data;
-          if (result.status == 1) {
-            that.formRepHooks = result.data;
-          } else {
-            that.$Message.error({ content: result.message, duration: 2 });
-          }
-        })
-        .catch(function (error) {
-          that.loadingGetRepHooks = false;
-          console.log(error);
-          that.$Message.error("出错了 请联系管理员！");
-        });
-    },
-    /**
-     * 获取推荐钩子
-     */
-    GetRecommendHooks() {
-      var that = this;
-      var data = {};
-      that.$axios
-        .post("api.php?c=Svnrep&a=GetRecommendHooks&t=web", data)
-        .then(function (response) {
-          var result = response.data;
-          if (result.status == 1) {
-            that.recommendHooks = result.data;
-          } else {
-            that.$Message.error({ content: result.message, duration: 2 });
-          }
-        })
-        .catch(function (error) {
-          console.log(error);
-          that.$Message.error("出错了 请联系管理员！");
-        });
-    },
-    /**
-     * 移除仓库钩子
-     */
-    DelRepHook(fileName) {
-      var that = this;
-      that.loadingGetRepHooks = true;
-      var data = {
-        rep_name: that.currentRepName,
-        fileName: fileName,
-      };
-      that.$axios
-        .post("api.php?c=Svnrep&a=DelRepHook&t=web", data)
-        .then(function (response) {
-          var result = response.data;
-          if (result.status == 1) {
-            that.$Message.success(result.message);
-            that.GetRepHooks();
-          } else {
-            that.loadingGetRepHooks = false;
-            that.$Message.error({ content: result.message, duration: 2 });
-          }
-        })
-        .catch(function (error) {
-          that.loadingGetRepHooks = false;
-          console.log(error);
-          that.$Message.error("出错了 请联系管理员！");
-        });
-    },
-    /**
-     * 查看钩子模板内容
-     */
-    ModalStudyRepHook(key) {
-      //设置当前选中的钩子文件名称
-      this.tempSelectRepHook = this.formRepHooks[key].fileName;
-      //设置当前选中的钩子文件模板内容到输入框
-      this.tempSelectRepHookTmpl = this.formRepHooks[key].tmpl;
-      //设置标题
-      this.titleModalStudyRepHook =
-        "钩子信息介绍 - " + this.formRepHooks[key].fileName;
-      // 展示输入框
-      this.modalStudyRepHook = true;
-    },
-    /**
-     * 修改仓库的钩子内容
-     */
-    ModalEditRepHook(key) {
-      //设置当前选中的钩子文件名称
-      this.tempSelectRepHook = this.formRepHooks[key].fileName;
-      //设置当前选中的钩子文件内容到输入框
-      this.tempSelectRepHookCon = this.formRepHooks[key].con;
-      //设置标题
-      this.titleModalEditRepHook =
-        "钩子文件编辑 - " + this.formRepHooks[key].fileName;
-      // 展示输入框
-      this.modalEditRepHook = true;
-    },
-    /**
-     * 查看推荐仓库钩子内容
-     */
-    ViewRecommendHook(hookName) {
-      var temp = this.recommendHooks.filter(
-        (item) => (item.hookName = hookName)
-      );
-      //设置当前选中的内容到输入框
-      this.tempSelectRepHookRecommend = temp[0].hookContent;
-      // 展示输入框
-      this.modalRecommendHook = true;
-    },
-    UpdRepHook() {
-      var that = this;
-      that.loadingEditRepHook = true;
-      var data = {
-        rep_name: that.currentRepName,
-        fileName: that.tempSelectRepHook,
-        content: that.tempSelectRepHookCon,
-      };
-      that.$axios
-        .post("api.php?c=Svnrep&a=UpdRepHook&t=web", data)
-        .then(function (response) {
-          that.loadingEditRepHook = false;
-          var result = response.data;
-          if (result.status == 1) {
-            that.modalEditRepHook = false;
-            that.$Message.success(result.message);
-            that.GetRepHooks();
-          } else {
-            that.$Message.error({ content: result.message, duration: 2 });
-          }
-        })
-        .catch(function (error) {
-          that.loadingEditRepHook = false;
-          console.log(error);
-          that.$Message.error("出错了 请联系管理员！");
-        });
-    },
-    /**
      * 高级
      */
     ModalRepAdvance(rep_name) {
-      //设置当前仓库名称
-      this.currentRepName = rep_name;
-      //设置标题
-      this.titleModalRepAdvance = "高级 - " + rep_name;
-      //显示对话框
-      this.modalRepAdvance = true;
-      this.ClickTabAdvance(sessionStorage.curTabRepAdvance);
-    },
-    /**
-     * 获取仓库的属性内容（key-vlaue的形式）
-     */
-    GetRepDetail() {
-      var that = this;
-      that.loadingRepDetail = true;
-      var data = {
-        rep_name: that.currentRepName,
-      };
-      that.$axios
-        .post("api.php?c=Svnrep&a=GetRepDetail&t=web", data)
-        .then(function (response) {
-          that.loadingRepDetail = false;
-          var result = response.data;
-          if (result.status == 1) {
-            that.tableDataRepDetail = result.data;
-          } else {
-            that.$Message.error({ content: result.message, duration: 2 });
-          }
-        })
-        .catch(function (error) {
-          that.loadingRepDetail = false;
-          console.log(error);
-          that.$Message.error("出错了 请联系管理员！");
-        });
-    },
-    /**
-     * 复制仓库属性
-     */
-    CopyRepDetail(index) {
-      var that = this;
-      var copyContent =
-        that.tableDataRepDetail[index].repKey +
-        ":" +
-        that.tableDataRepDetail[index].repValue;
-      that.$copyText(copyContent).then(
-        function (e) {
-          that.$Message.success("复制成功");
-        },
-        function (e) {
-          that.$Message.error("复制失败，请手动复制");
-        }
-      );
-    },
-    /**
-     * 重设仓库UUID
-     */
-    ModalSetUUID() {
-      //清空
-      this.tempRepUUID = "";
-      //对话框
-      this.modalSetUUID = true;
-    },
-    SetUUID() {
-      var that = this;
-      that.loadingSetUUID = true;
-      var data = {
-        rep_name: that.currentRepName,
-        uuid: that.tempRepUUID,
-      };
-      that.$axios
-        .post("api.php?c=Svnrep&a=SetUUID&t=web", data)
-        .then(function (response) {
-          that.loadingSetUUID = false;
-          var result = response.data;
-          if (result.status == 1) {
-            that.$Message.success(result.message);
-            that.GetRepDetail();
-            that.modalSetUUID = false;
-          } else {
-            that.$Message.error({ content: result.message, duration: 2 });
-          }
-        })
-        .catch(function (error) {
-          that.loadingSetUUID = false;
-          console.log(error);
-          that.$Message.error("出错了 请联系管理员！");
-        });
-    },
-    //获取php文件上传相关参数
-    GetUploadInfo() {
-      var that = this;
-      var data = {};
-      that.$axios
-        .post("api.php?c=Svnrep&a=GetUploadInfo&t=web", data)
-        .then(function (response) {
-          var result = response.data;
-          if (result.status == 1) {
-            that.file.on = result.data.upload;
-            that.file.chunkSize = result.data.chunkSize;
-            that.file.deleteOnMerge = result.data.deleteOnMerge;
-          } else {
-            that.$Message.error({ content: result.message, duration: 2 });
-          }
-        })
-        .catch(function (error) {
-          console.log(error);
-          that.$Message.error("出错了 请联系管理员！");
-        });
-    },
-    //上传前
-    BeforeUpload() {
-      this.loadingUploadBackup = true;
-      return true;
-    },
-    //上传成功
-    UploadSuccess(res, file, fileList) {
-      this.loadingUploadBackup = false;
-      var result = res;
-      if (result.status == 1) {
-        this.$Message.success(result.message);
-      } else {
-        this.$Message.error({ content: result.message, duration: 2 });
+      if (this.$refs.repoAdvancedSettings) {
+        this.$refs.repoAdvancedSettings.open(rep_name);
       }
-      this.GetBackupList();
-    },
-    SvnadminLoad(fileName, index) {
-      var that = this;
-      that.loadingLoadBackup[index] = true;
-      that.loadingLoadBackup = JSON.parse(
-        JSON.stringify(that.loadingLoadBackup)
-      );
-      var data = {
-        rep_name: that.currentRepName,
-        fileName: fileName,
-      };
-      that.$axios
-        .post("api.php?c=Svnrep&a=SvnadminLoad&t=web", data)
-        .then(function (response) {
-          that.loadingLoadBackup[index] = false;
-          that.loadingLoadBackup = JSON.parse(
-            JSON.stringify(that.loadingLoadBackup)
-          );
-          var result = response.data;
-          if (result.status == 1) {
-            that.$Message.success(result.message);
-          } else {
-            that.$Message.error({ content: result.message, duration: 2 });
-            that.modalRepLoad = true;
-            that.tempRepLoadError = result.data;
-          }
-        })
-        .catch(function (error) {
-          that.loadingLoadBackup[index] = true;
-          that.loadingLoadBackup = JSON.parse(
-            JSON.stringify(that.loadingLoadBackup)
-          );
-          console.log(error);
-          that.$Message.error("出错了 请联系管理员！");
-        });
     },
 
     /**
@@ -2603,124 +1386,41 @@ export default {
      * 删除仓库
      */
     DelRep(rep_name) {
-      var that = this;
-      that.$Modal.confirm({
-        // title: "删除仓库 - " + rep_name,
-        // content:
-        //   "确定要删除该仓库吗？<br/>该操作不可逆！<br/>如果该仓库有正在进行的网络传输，可能会删除失败，请注意提示信息！",
-        render: (h) => {
-          return h("div", [
-            h(
-              "div",
-              {
-                class: { "modal-title": true },
-                style: {
-                  display: "flex",
-                  height: "42px",
-                  alignItems: "center",
-                },
-              },
-              [
-                h("Icon", {
-                  props: {
-                    type: "ios-help-circle",
-                  },
-                  style: {
-                    width: "28px",
-                    height: "28px",
-                    fontSize: "28px",
-                    color: "#f90",
-                  },
-                }),
-                h(
-                  "tooltip",
-                  {
-                    props: {
-                      transfer: true,
-                      placement: "bottom",
-                      "max-width": "400",
-                    },
-                  },
-                  [
-                    h("span", {
-                      style: {
-                        marginLeft: "12px",
-                        fontSize: "16px",
-                        color: "#17233d",
-                        fontWeight: 500,
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        width: "285px",
-                        display: "inline-block",
-                      },
-                      domProps: {
-                        innerHTML: "删除仓库 - " + rep_name,
-                      },
-                    }),
-                    h(
-                      "div",
-                      {
-                        slot: "content",
-                        style: {
-                          fontSize: "10px",
-                        },
-                      },
-                      [
-                        h(
-                          "p",
-                          {
-                            style: {
-                              fontSize: "15px",
-                            },
-                          },
-                          "删除仓库 - " + rep_name
-                        ),
-                      ]
-                    ),
-                  ]
-                ),
-              ]
-            ),
-            h(
-              "div",
-              {
-                class: { "modal-content": true },
-                style: { paddingLeft: "40px" },
-              },
-              [
-                h("p", {
-                  style: { marginBottom: "15px" },
-                  domProps: {
-                    innerHTML:
-                      "确定要删除该仓库吗？<br/>该操作不可逆！<br/>如果该仓库有正在进行的网络传输，可能会删除失败，请注意提示信息！",
-                  },
-                }),
-              ]
-            ),
-          ]);
-        },
-        onOk: () => {
-          var data = {
-            rep_name: rep_name,
-          };
-          that.$axios
-            .post("api.php?c=Svnrep&a=DelRep&t=web", data)
-            .then(function (response) {
-              var result = response.data;
-              if (result.status == 1) {
-                that.$Message.success(result.message);
-                that.GetRepList();
-              } else {
-                that.$Message.error({ content: result.message, duration: 2 });
-              }
-            })
-            .catch(function (error) {
-              console.log(error);
-              that.$Message.error("出错了 请联系管理员！");
-            });
-        },
-      });
+      this.deleteConfirm.visible = true;
+      this.deleteConfirm.repName = rep_name;
+      this.deleteConfirm.input = "";
+      this.deleteConfirm.loading = false;
+    },
+    handleDeleteConfirmVisible(visible) {
+      if (!visible) {
+        this.deleteConfirm.repName = "";
+        this.deleteConfirm.input = "";
+        this.deleteConfirm.loading = false;
+      }
+    },
+    ConfirmDeleteRep() {
+      if (!this.deleteConfirm.repName || this.deleteConfirm.input !== this.deleteConfirm.repName) {
+        return;
+      }
+      this.deleteConfirm.loading = true;
+      this.$axios
+        .post("api.php?c=Svnrep&a=DelRep&t=web", { rep_name: this.deleteConfirm.repName })
+        .then((response) => {
+          this.deleteConfirm.loading = false;
+          const result = response.data;
+          if (result.status == 1) {
+            this.$Message.success(result.message);
+            this.deleteConfirm.visible = false;
+            this.GetRepList();
+          } else {
+            this.$Message.error({ content: result.message, duration: 2 });
+          }
+        })
+        .catch((error) => {
+          this.deleteConfirm.loading = false;
+          console.log(error);
+          this.$Message.error("出错了 请联系管理员！");
+        });
     },
     
     /**
@@ -2746,11 +1446,22 @@ export default {
 </script>
 
 <style lang="less" scoped>
+.repository-page {
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+}
+
+.repo-toolbar {
+  margin-bottom: var(--space-lg);
+}
+
 .action-bar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-sm);
 }
 
 .mr-10 {
@@ -2763,8 +1474,141 @@ export default {
   }
 }
 
+.repo-search-box {
+  position: relative;
+  width: 100%;
+}
+
+.repo-suggest-panel {
+  position: absolute;
+  top: 38px;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: #fff;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+  overflow: hidden;
+}
+
+.repo-suggest-item {
+  padding: 10px var(--space-md);
+  cursor: pointer;
+  border-bottom: 1px solid #f0f0f0;
+  transition: background 0.2s;
+}
+
+.repo-suggest-item:last-child {
+  border-bottom: none;
+}
+
+.repo-suggest-item:hover,
+.repo-suggest-item.active {
+  background: var(--primary-light);
+}
+
+.suggest-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  color: var(--text-main);
+}
+
+.suggest-main /deep/ .suggest-highlight,
+.suggest-meta /deep/ .suggest-highlight {
+  color: var(--primary-color);
+  background: rgba(45, 140, 240, 0.12);
+  border-radius: 3px;
+  padding: 0 2px;
+  font-weight: 700;
+}
+
+.suggest-meta {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+  color: var(--text-light);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.repo-suggest-state {
+  padding: var(--space-md);
+  color: var(--text-light);
+  text-align: center;
+}
+
+.repo-empty-state {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-lg) var(--space-md);
+  color: var(--text-light);
+  text-align: center;
+}
+
+.repo-empty-state strong {
+  color: var(--text-main);
+}
+
+.repo-empty-illustration {
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #f0f7ff;
+  color: var(--primary-color);
+  font-size: 28px;
+}
+
 .table-container {
-  margin-top: 10px;
+  position: relative;
+  margin-top: var(--space-sm);
+}
+
+.repo-table-skeleton {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 41px;
+  bottom: 0;
+  z-index: 2;
+  padding: var(--space-md);
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+
+.skeleton-row {
+  display: grid;
+  grid-template-columns: 12% 24% 18% 1fr;
+  gap: var(--space-md);
+  height: 34px;
+  align-items: center;
+}
+
+.skeleton-row span {
+  height: 10px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, #f2f4f7 25%, #e8ecf2 37%, #f2f4f7 63%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0 0; }
+}
+
+.table-soft-loading /deep/ .ivu-table-body {
+  filter: blur(1px);
+  opacity: 0.55;
 }
 
 .modern-table /deep/ .ivu-table-cell {
@@ -2778,6 +1622,28 @@ export default {
 
 .modern-table /deep/ td {
   height: 48px;
+}
+
+.modern-table /deep/ .ivu-table-wrapper,
+.modern-table /deep/ .ivu-table,
+.modern-table /deep/ .ivu-table th,
+.modern-table /deep/ .ivu-table td,
+/deep/ .ivu-table th,
+/deep/ .ivu-table td {
+  border-left: 0 !important;
+  border-right: 0 !important;
+}
+
+.modern-table /deep/ .ivu-table:before,
+.modern-table /deep/ .ivu-table:after,
+/deep/ .ivu-table:before,
+/deep/ .ivu-table:after {
+  display: none;
+}
+
+/deep/ .repo-row-highlight td {
+  background-color: #fff7e6 !important;
+  transition: background-color 0.3s;
 }
 
 .repo-action-group {
@@ -2868,158 +1734,73 @@ export default {
     &:hover, &:focus {
       background: #fff;
       border-color: var(--border-color);
+      padding-right: 30px;
     }
   }
 }
 
-/* 现代化浏览器样式 */
-.modern-browser-modal /deep/ .ivu-modal-body {
-  padding: 0;
-  background-color: #fff;
+.note-input-wrap {
+  position: relative;
 }
 
-.browser-container {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-
-.browser-header {
-  padding: 12px 24px;
-  background: var(--primary-light);
-  border-bottom: 1px solid var(--border-color);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.modern-breadcrumb {
-  background: #fff;
-  padding: 4px 16px;
-  border-radius: 20px;
-  border: 1px solid var(--border-color);
-  box-shadow: var(--shadow-light);
-}
-
-.checkout-box {
-  display: flex;
-  align-items: center;
-  background: #fff;
-  padding: 4px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-  box-shadow: var(--shadow-light);
-}
-
-.checkout-label {
-  font-size: 12px;
+.note-edit-icon {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  z-index: 1;
+  margin-top: -7px;
   color: var(--text-light);
-  margin-right: 8px;
-  font-weight: 600;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
 }
 
-.checkout-input {
-  width: 400px;
-  /deep/ .ivu-input {
-    border: none;
-    background: transparent;
-    font-family: monospace;
-    font-size: 13px;
-    color: var(--primary-color);
-  }
+.note-input-wrap:hover .note-edit-icon {
+  opacity: 1;
 }
 
-.browser-table /deep/ .ivu-table-row {
-  cursor: pointer;
-  &:hover td {
-    background-color: var(--primary-light) !important;
-  }
+.note-saving-icon {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  margin-top: -7px;
+  pointer-events: none;
 }
 
-.file-icon-wrapper {
-  display: flex;
-  justify-content: center;
+.note-saved-icon {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  margin-top: -7px;
+  color: #19be6b;
+  pointer-events: none;
+  animation: note-success-pop 0.28s ease-out;
 }
 
-.icon-file { color: var(--text-light); }
-.icon-folder { color: var(--primary-color); }
-
-.file-name-info {
-  font-weight: 500;
-  color: var(--text-main);
+@keyframes note-success-pop {
+  0% { transform: scale(0.65); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
 }
 
-.rev-cell {
+.delete-confirm-repo {
   display: flex;
   align-items: center;
-  gap: 8px;
-  .rev-author {
-    color: var(--text-sub);
-    font-size: 12px;
-  }
-}
-
-/* 现代化钩子编辑器样式 */
-.modern-hooks-modal /deep/ .ivu-modal-body {
-  background-color: var(--content-bg);
-}
-
-.hooks-container {
-  padding: 10px 0;
-}
-
-.hooks-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-  gap: 16px;
-  padding: 16px 4px;
-}
-
-.hook-card {
-  border: 1px solid var(--border-color);
-  background: #fff;
-  
-  &:hover {
-    border-color: var(--primary-color);
-    transform: translateY(-2px);
-  }
-}
-
-.hook-card-header {
-  display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-
-.hook-status-info {
-  display: flex;
-  align-items: center;
-}
-
-.hook-name {
-  font-weight: 700;
-  color: var(--text-main);
-  font-size: 13px;
-  margin-left: 8px;
-}
-
-.hook-actions {
-  display: flex;
-  gap: 4px;
-}
-
-.hook-card-body {
-  background: var(--content-bg);
-  padding: 10px 12px;
+  margin: var(--space-md) 0 var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
   border-radius: 6px;
+  background: #f8f9fb;
 }
 
-.hook-desc {
-  font-family: "Fira Code", monospace;
-  font-size: 11px;
-  color: var(--text-sub);
+.delete-confirm-repo span {
+  color: var(--text-light);
 }
+
+.delete-confirm-repo strong {
+  color: #ed4014;
+  font-family: monospace;
+}
+
 </style>
 
 <style lang="less">
