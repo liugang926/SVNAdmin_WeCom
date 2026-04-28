@@ -54,7 +54,21 @@
       </Header>
 
       <Layout>
-        <Sider class="layout-sider" width="200">
+        <Sider
+          class="layout-sider"
+          :class="{ 'is-collapsed': siderCollapsed }"
+          :width="siderCollapsed ? 64 : 200"
+        >
+          <div class="sider-collapse-control">
+            <Tooltip :content="siderCollapsed ? '展开侧边栏' : '折叠侧边栏'" placement="right" :transfer="true">
+              <Button
+                type="text"
+                size="small"
+                :icon="siderCollapsed ? 'ios-arrow-forward' : 'ios-arrow-back'"
+                @click="ToggleSider"
+              />
+            </Tooltip>
+          </div>
           <Menu
             theme="light"
             width="auto"
@@ -62,7 +76,7 @@
             style="height: 100%"
           >
             <MenuGroup
-              :title="itemGroup.title"
+              :title="siderCollapsed ? '' : itemGroup.title"
               v-for="(itemGroup, indexGroup) in navList"
               :key="indexGroup"
             >
@@ -77,15 +91,28 @@
                   :count="itemItem.name == 'setting' && hasUpdate ? 1 : 0"
                   :offset="[0, -10]"
                 >
-                  <Icon :type="getMenuIcon(itemItem)" size="16" />
-                  <span style="margin-left: 8px">{{ itemItem.meta.title }}</span>
+                  <Tooltip
+                    v-if="siderCollapsed"
+                    :content="itemItem.meta.title"
+                    placement="right"
+                    :transfer="true"
+                  >
+                    <Icon :type="getMenuIcon(itemItem)" size="18" />
+                  </Tooltip>
+                  <template v-else>
+                    <Icon :type="getMenuIcon(itemItem)" size="16" />
+                    <span class="menu-text">{{ itemItem.meta.title }}</span>
+                  </template>
                 </Badge>
               </MenuItem>
             </MenuGroup>
           </Menu>
         </Sider>
 
-        <Content class="layout-content-wrapper">
+        <Content
+          class="layout-content-wrapper"
+          :class="{ 'sider-is-collapsed': siderCollapsed }"
+        >
           <div class="layout-content-main">
             <router-view></router-view>
           </div>
@@ -96,16 +123,25 @@
     <!-- 全局后台任务悬浮球 -->
     <div 
       class="global-task-ball" 
-      :class="{ 'is-running': formTasks.task_running }"
+      :class="{ 'is-running': formTasks.task_running, 'is-minimized': taskBallMinimized }"
       v-if="currentRoleId != 2"
-      @click="ModalTasks"
+      @click="taskBallMinimized ? ToggleTaskBallMinimized() : ModalTasks()"
     >
       <Tooltip content="点击查看后台任务" placement="left">
         <div class="ball-inner">
           <Icon type="md-sync" size="20" class="ball-icon" />
+          <span class="ball-text" v-if="!taskBallMinimized">后台任务</span>
           <Badge :count="formTasks.count" class="ball-badge" v-if="formTasks.count > 0" />
         </div>
       </Tooltip>
+      <Button
+        v-if="!taskBallMinimized"
+        class="ball-minimize"
+        type="text"
+        size="small"
+        icon="ios-remove"
+        @click.stop="ToggleTaskBallMinimized"
+      />
     </div>
 
     <!-- 对话框-实时后台任务 -->
@@ -241,6 +277,10 @@ export default {
       navList: [],
       //面包屑
       breadcrumb: [],
+      //侧边栏折叠
+      siderCollapsed: localStorage.getItem("layout_sider_collapsed") == "1",
+      //后台任务悬浮球最小化
+      taskBallMinimized: localStorage.getItem("global_task_ball_minimized") == "1",
 
       /**
        * 临时变量
@@ -348,6 +388,14 @@ export default {
     };
   },
   methods: {
+    ToggleSider() {
+      this.siderCollapsed = !this.siderCollapsed;
+      localStorage.setItem("layout_sider_collapsed", this.siderCollapsed ? "1" : "0");
+    },
+    ToggleTaskBallMinimized() {
+      this.taskBallMinimized = !this.taskBallMinimized;
+      localStorage.setItem("global_task_ball_minimized", this.taskBallMinimized ? "1" : "0");
+    },
     getMenuIcon(item){
       const n = (item && (item.name || (item.meta && item.meta.title))) || ''
       const p = (item && item.path) || ''
@@ -737,6 +785,10 @@ export default {
   },
   mounted() {
     var that = this;
+    if (window.innerWidth <= 768 && localStorage.getItem("layout_sider_collapsed") == null) {
+      that.siderCollapsed = true;
+      localStorage.setItem("layout_sider_collapsed", "1");
+    }
     if (sessionStorage.hasUpdate == null) {
       //未检测更新 有新版本 0 未检测 1 有新版本 2 无新版本
       sessionStorage.setItem("hasUpdate", 0);

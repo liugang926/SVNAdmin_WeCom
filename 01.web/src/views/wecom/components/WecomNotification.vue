@@ -119,43 +119,81 @@
       </Row>
 
       <!-- 规则列表 -->
-      <Table 
-        :columns="ruleColumns" 
-        :data="notificationRules" 
-        :loading="rulesLoading"
-        stripe
-      >
-        <template slot-scope="{ row }" slot="event_type">
-          <span v-for="(eventType, index) in parseEventTypes(row.event_type)" :key="index">
-            <Tag :color="getEventTypeColor(eventType)" style="margin-right: 4px; margin-bottom: 2px;">
-              {{ getEventTypeText(eventType) }}
-            </Tag>
-          </span>
-        </template>
-        
-        <template slot-scope="{ row }" slot="enable">
-          <i-switch 
-            v-model="row.enable" 
-            @on-change="toggleRuleStatus(row)"
-            :true-value="1"
-            :false-value="0"
-          />
-        </template>
-        
-        <template slot-scope="{ row }" slot="actions">
-          <ButtonGroup size="small">
-            <Button @click="testRule(row)" title="测试规则">
-              <Icon type="ios-play"/>
-            </Button>
-            <Button @click="editRule(row)" title="编辑规则">
-              <Icon type="ios-create"/>
-            </Button>
-            <Button @click="deleteRule(row)" type="error" title="删除规则">
-              <Icon type="ios-trash"/>
-            </Button>
-          </ButtonGroup>
-        </template>
-      </Table>
+      <div v-if="notificationRules.length === 0" class="rule-empty">
+        <Icon type="ios-notifications-outline" />
+        <strong>暂无通知规则</strong>
+        <span>新建一条规则后，SVN 操作会按条件推送到企业微信。</span>
+      </div>
+      <div v-else class="rule-card-list">
+        <Card
+          v-for="rule in notificationRules"
+          :key="rule.id"
+          :bordered="false"
+          :dis-hover="true"
+          class="rule-card"
+          :class="{ 'rule-card-disabled': Number(rule.enable) !== 1 }"
+        >
+          <div class="rule-card-header">
+            <div class="rule-title-area">
+              <Badge :status="Number(rule.enable) === 1 ? 'success' : 'default'" />
+              <div>
+                <div class="rule-name">{{ rule.rule_name || ('规则 #' + rule.id) }}</div>
+                <div class="rule-meta">创建于 {{ rule.created_at || '-' }}</div>
+              </div>
+            </div>
+            <div class="rule-actions">
+              <i-switch
+                v-model="rule.enable"
+                @on-change="toggleRuleStatus(rule)"
+                :true-value="1"
+                :false-value="0"
+              />
+              <Tooltip content="发送测试" placement="top">
+                <Button size="small" type="text" icon="ios-play" @click="testRule(rule)" />
+              </Tooltip>
+              <Tooltip content="编辑规则" placement="top">
+                <Button size="small" type="text" icon="ios-create" @click="editRule(rule)" />
+              </Tooltip>
+              <Tooltip content="删除规则" placement="top">
+                <Button size="small" type="text" icon="ios-trash" @click="deleteRule(rule)" />
+              </Tooltip>
+            </div>
+          </div>
+          <div class="rule-card-body">
+            <div class="rule-field">
+              <span>触发条件</span>
+              <div class="event-tags">
+                <Tag
+                  v-for="eventType in parseEventTypes(rule.event_type)"
+                  :key="eventType"
+                  :color="getEventTypeColor(eventType)"
+                >
+                  {{ getEventTypeText(eventType) }}
+                </Tag>
+              </div>
+            </div>
+            <div class="rule-field">
+              <span>通知范围</span>
+              <strong>{{ formatRuleScope(rule) }}</strong>
+            </div>
+            <div class="rule-field">
+              <span>接收人</span>
+              <div class="recipient-stack">
+                <Avatar
+                  v-for="recipient in getRecipientPreview(rule)"
+                  :key="recipient.key"
+                  size="small"
+                  :style="{ backgroundColor: recipient.color }"
+                >
+                  {{ recipient.label }}
+                </Avatar>
+                <span v-if="getRecipientCount(rule) === 0" class="muted-text">未指定</span>
+                <span v-else class="muted-text">{{ getRecipientText(rule) }}</span>
+              </div>
+            </div>
+          </div>
+        </Card>
+      </div>
       </div>
     </Card>
 
@@ -163,11 +201,12 @@
     <Modal
       v-model="ruleModalVisible"
       :title="isEditMode ? '编辑通知规则' : '创建通知规则'"
-      width="800"
+      width="1040"
       @on-ok="saveRule"
       @on-cancel="cancelRuleEdit"
     >
-      <Form ref="ruleForm" :model="ruleForm" :rules="ruleRules" :label-width="120">
+      <div class="rule-edit-layout">
+      <Form ref="ruleForm" :model="ruleForm" :rules="ruleRules" :label-width="120" class="rule-edit-form">
         <!-- 基础信息 -->
         <Divider orientation="left">基础信息</Divider>
         
@@ -269,6 +308,30 @@
           </i-switch>
         </FormItem>
       </Form>
+      <div class="phone-preview-panel">
+        <div class="phone-shell">
+          <div class="phone-speaker"></div>
+          <div class="phone-screen">
+            <div class="phone-status">
+              <span>企业微信</span>
+              <Icon type="ios-wifi" />
+            </div>
+            <div class="chat-title">SVNAdmin 通知</div>
+            <div class="message-card">
+              <div class="message-app">
+                <Avatar size="small" style="background:#2d8cf0">S</Avatar>
+                <span>SVNAdmin</span>
+              </div>
+              <pre>{{ previewMessage }}</pre>
+            </div>
+            <div class="preview-meta">
+              <Tag color="blue" size="small">{{ previewRepoText }}</Tag>
+              <Tag color="green" size="small">{{ previewEventText }}</Tag>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div>
     </Modal>
 
     <!-- 测试通知模态框 -->
@@ -427,6 +490,41 @@ export default {
           align: 'center'
         }
       ]
+    }
+  },
+
+  computed: {
+    previewRepoText() {
+      if (this.ruleForm.all_repos) {
+        return '全部仓库'
+      }
+      const repos = this.ruleForm.repo_names || []
+      return repos.length ? repos.join(', ') : '未选择仓库'
+    },
+    previewEventText() {
+      const events = this.ruleForm.event_types || []
+      if (!events.length) {
+        return '未选择事件'
+      }
+      return events.map((item) => this.getEventTypeText(item)).join(' / ')
+    },
+    previewMessage() {
+      const template = this.ruleForm.message_template || [
+        'SVN 提交通知',
+        '仓库：{repo_name}',
+        '作者：{author}',
+        '版本：r{revision}',
+        '路径：{files}',
+        '备注：{message}',
+        '时间：{timestamp}'
+      ].join('\n')
+      return template
+        .replace(/\{repo_name\}/g, this.previewRepoText)
+        .replace(/\{author\}/g, 'zhangsan')
+        .replace(/\{revision\}/g, '1286')
+        .replace(/\{message\}/g, '优化企业微信通知规则')
+        .replace(/\{files\}/g, this.ruleForm.path_prefix || '/trunk')
+        .replace(/\{timestamp\}/g, new Date().toLocaleString())
     }
   },
 
@@ -767,6 +865,7 @@ export default {
         webhook_url: '',
         message_template: '',
         notify_wecom_userids: [],
+        notify_wecom_deptids: [],
         enable: 1
       }
       this.eventAllChecked = true
@@ -872,6 +971,57 @@ export default {
       })
     },
 
+    splitValue(value) {
+      if (!value) {
+        return []
+      }
+      if (Array.isArray(value)) {
+        return value.filter(Boolean)
+      }
+      return String(value).split(',').map((item) => item.trim()).filter(Boolean)
+    },
+
+    formatRuleScope(rule) {
+      const repo = !rule.repo_name || rule.repo_name === '*' ? '全部仓库' : rule.repo_name
+      const path = rule.path_prefix || '/'
+      return repo + ' · ' + path
+    },
+
+    getRecipientCount(rule) {
+      return this.splitValue(rule.notify_wecom_userids).length + this.splitValue(rule.notify_wecom_deptids).length
+    },
+
+    getRecipientText(rule) {
+      const users = this.splitValue(rule.notify_wecom_userids)
+      const depts = this.splitValue(rule.notify_wecom_deptids)
+      const parts = []
+      if (users.length) {
+        parts.push(users.length + ' 个用户')
+      }
+      if (depts.length) {
+        parts.push(depts.length + ' 个部门')
+      }
+      return parts.join('，')
+    },
+
+    getRecipientPreview(rule) {
+      const users = this.splitValue(rule.notify_wecom_userids)
+      const depts = this.splitValue(rule.notify_wecom_deptids)
+      const items = users.map((item, index) => ({
+        key: 'user-' + item + '-' + index,
+        label: String(item).charAt(0).toUpperCase() || 'U',
+        color: '#2d8cf0'
+      }))
+      depts.forEach((item, index) => {
+        items.push({
+          key: 'dept-' + item + '-' + index,
+          label: '部',
+          color: '#19be6b'
+        })
+      })
+      return items.slice(0, 4)
+    },
+
     /**
      * 获取事件类型颜色
      */
@@ -936,5 +1086,207 @@ export default {
 
 .ivu-divider-horizontal.ivu-divider-with-text-left {
   margin: 24px 0 16px 0;
+}
+
+.rule-card-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.rule-card {
+  border: 1px solid #e8eaec;
+  border-radius: 8px;
+  background: #fff;
+  transition: border-color .2s, box-shadow .2s;
+}
+
+.rule-card:hover {
+  border-color: #2d8cf0;
+  box-shadow: 0 8px 22px rgba(45, 140, 240, .10);
+}
+
+.rule-card-disabled {
+  opacity: .66;
+}
+
+.rule-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.rule-title-area,
+.rule-actions,
+.recipient-stack,
+.message-app,
+.preview-meta {
+  display: flex;
+  align-items: center;
+}
+
+.rule-title-area {
+  gap: 8px;
+  min-width: 0;
+}
+
+.rule-name {
+  color: #17233d;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rule-meta,
+.muted-text {
+  color: #808695;
+  font-size: 12px;
+}
+
+.rule-actions {
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.rule-card-body {
+  display: grid;
+  gap: 12px;
+}
+
+.rule-field {
+  display: grid;
+  gap: 6px;
+}
+
+.rule-field > span {
+  color: #808695;
+  font-size: 12px;
+}
+
+.event-tags {
+  min-height: 24px;
+}
+
+.recipient-stack {
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.rule-empty {
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #808695;
+  border: 1px dashed #dcdee2;
+  border-radius: 8px;
+  background: #f8f9fb;
+}
+
+.rule-empty .ivu-icon {
+  font-size: 40px;
+  color: #2d8cf0;
+}
+
+.rule-empty strong {
+  color: #17233d;
+}
+
+.rule-edit-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.rule-edit-form {
+  min-width: 0;
+}
+
+.phone-preview-panel {
+  position: sticky;
+  top: 0;
+}
+
+.phone-shell {
+  width: 280px;
+  margin: 0 auto;
+  padding: 12px;
+  border-radius: 28px;
+  background: #17233d;
+  box-shadow: 0 20px 45px rgba(23, 35, 61, .22);
+}
+
+.phone-speaker {
+  width: 54px;
+  height: 5px;
+  margin: 0 auto 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.35);
+}
+
+.phone-screen {
+  min-height: 520px;
+  padding: 12px;
+  border-radius: 20px;
+  background: #eef2f6;
+}
+
+.phone-status {
+  display: flex;
+  justify-content: space-between;
+  color: #515a6e;
+  font-size: 12px;
+}
+
+.chat-title {
+  margin: 14px 0;
+  text-align: center;
+  color: #17233d;
+  font-weight: 600;
+}
+
+.message-card {
+  padding: 12px;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 2px 10px rgba(0,0,0,.05);
+}
+
+.message-app {
+  gap: 8px;
+  margin-bottom: 10px;
+  color: #17233d;
+  font-weight: 600;
+}
+
+.message-card pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #515a6e;
+  font-family: inherit;
+  line-height: 1.55;
+}
+
+.preview-meta {
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+@media (max-width: 960px) {
+  .rule-edit-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .phone-preview-panel {
+    position: static;
+  }
 }
 </style>

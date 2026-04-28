@@ -54,6 +54,27 @@
   overflow-y: auto;
   overflow-x: hidden;
   border-right: 1px solid var(--border-color);
+  transition: flex-basis 0.2s ease, width 0.2s ease, min-width 0.2s ease, max-width 0.2s ease;
+}
+
+.layout-sider.is-collapsed {
+  flex: 0 0 64px !important;
+  min-width: 64px !important;
+  max-width: 64px !important;
+  width: 64px !important;
+}
+
+.sider-collapse-control {
+  height: 44px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.layout-sider.is-collapsed .sider-collapse-control {
+  justify-content: center;
 }
 
 .layout-sider .ivu-layout-sider-children {
@@ -81,6 +102,15 @@
   margin-top: 10px;
 }
 
+.layout-sider.is-collapsed /deep/ .ivu-menu-group-title {
+  height: 10px;
+  line-height: 10px;
+  padding: 0;
+  margin: 8px 16px;
+  border-top: 1px solid var(--border-color);
+  color: transparent;
+}
+
 .ivu-menu-item {
   padding: 14px 24px !important;
   color: var(--text-sub) !important;
@@ -93,6 +123,26 @@
     color: var(--primary-color) !important;
     background: var(--primary-light) !important;
   }
+}
+
+.layout-sider.is-collapsed /deep/ .ivu-menu-item {
+  width: 40px;
+  height: 40px;
+  padding: 0 !important;
+  margin: 6px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.layout-sider.is-collapsed /deep/ .ivu-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.menu-text {
+  margin-left: 8px;
 }
 
 .ivu-menu-item-active {
@@ -116,6 +166,10 @@
   padding-top: 0;
   padding-left: 0;
   transition: all 0.2s ease-in-out;
+}
+
+.layout-content-wrapper.sider-is-collapsed {
+  min-width: 0;
 }
 
 .layout-content-main {
@@ -142,28 +196,40 @@
   }
 }
 
-/* 全局任务球样式 - 现代化悬浮设计 */
+/* 全局任务球样式 - 与业务界面分层的玻璃态悬浮入口 */
 .global-task-ball {
   position: fixed;
-  right: 32px;
-  bottom: 32px;
-  width: 52px;
+  right: 24px;
+  bottom: 96px;
+  width: 118px;
   height: 52px;
-  background: linear-gradient(135deg, var(--primary-color), #4dabf7);
-  border-radius: 50%;
-  box-shadow: 0 6px 20px rgba(45, 140, 240, 0.4);
+  background: rgba(27, 36, 52, 0.78);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border-radius: 999px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.28);
   z-index: 1000;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  border: 2px solid #fff;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  color: #fff;
 }
 
 .global-task-ball:hover {
-  transform: translateY(-4px) scale(1.05);
-  box-shadow: 0 8px 24px rgba(45, 140, 240, 0.5);
+  transform: translateY(-3px);
+  background: rgba(17, 24, 39, 0.86);
+  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.34);
+}
+
+.global-task-ball.is-minimized {
+  width: 44px;
+  height: 44px;
+  right: 16px;
+  bottom: 104px;
+  border-radius: 14px;
 }
 
 .global-task-ball .ball-inner {
@@ -171,11 +237,19 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 8px;
 }
 
 .global-task-ball .ball-icon {
   color: #fff;
   font-size: 24px;
+}
+
+.global-task-ball .ball-text {
+  color: #fff;
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .global-task-ball.is-running .ball-icon {
@@ -188,8 +262,21 @@
   width: 100%;
   height: 100%;
   border-radius: 50%;
-  border: 2px solid var(--primary-color);
+  border: 2px solid rgba(45, 140, 240, 0.75);
   animation: ani-ball-pulse 2s ease-out infinite;
+}
+
+.ball-minimize {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 20px;
+  height: 20px;
+  padding: 0 !important;
+  border-radius: 50%;
+  color: #fff !important;
+  background: rgba(15, 23, 42, 0.72) !important;
+  border: 1px solid rgba(255, 255, 255, 0.35) !important;
 }
 
 @keyframes ani-ball-rotate {
@@ -208,5 +295,46 @@
   right: -14px;
   /deep/ .ivu-badge-count {
     box-shadow: 0 0 0 2px #fff;
+  }
+}
+
+@media (max-width: 768px) {
+  .layout-sider {
+    flex: 0 0 64px !important;
+    min-width: 64px !important;
+    max-width: 64px !important;
+    width: 64px !important;
+  }
+
+  .layout-sider /deep/ .ivu-menu-group-title {
+    height: 10px;
+    line-height: 10px;
+    padding: 0;
+    margin: 8px 16px;
+    border-top: 1px solid var(--border-color);
+    color: transparent;
+  }
+
+  .layout-sider /deep/ .ivu-menu-item {
+    width: 40px;
+    height: 40px;
+    padding: 0 !important;
+    margin: 6px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .layout-sider .menu-text {
+    display: none;
+  }
+
+  .layout-content-main {
+    padding: 16px;
+  }
+
+  .global-task-ball {
+    right: 16px;
+    bottom: 88px;
   }
 }
